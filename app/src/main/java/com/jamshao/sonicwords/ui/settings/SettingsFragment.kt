@@ -327,4 +327,4 @@ class SettingsFragment : PreferenceFragmentCompat(), SharedPreferences.OnSharedP
             Toast.makeText(requireContext(), "未找到邮件应用", Toast.LENGTH_SHORT).show()
         }
     }
-}
+} 

@@ -35,11 +35,17 @@ class MLKitTranslationService @Inject constructor() : TranslationService {
         return withContext(Dispatchers.IO) {
             try {
                 ensureModelDownloaded()
-                translateTextInternal(word)
+                val result = translateTextInternal(word)
+                // 检查翻译结果是否有意义 (仅在结果为空时视为失败，放宽对翻译结果的验证)
+                if (result.isBlank()) {
+                    Log.w(TAG, "翻译结果为空: $word -> $result")
+                    throw Exception("空的翻译结果")
+                }
+                result
             } catch (e: Exception) {
-                Log.e(TAG, "翻译失败: ${e.message}", e)
-                // 翻译失败时返回原始单词
-                "无法翻译: $word"
+                Log.e(TAG, "翻译失败: $word - ${e.message}", e)
+                // 翻译失败时返回具有明确前缀的结果，便于上层处理
+                "无法翻译:$word"
             }
         }
     }
@@ -49,7 +55,8 @@ class MLKitTranslationService @Inject constructor() : TranslationService {
      */
     private suspend fun ensureModelDownloaded() = suspendCancellableCoroutine { continuation ->
         val conditions = DownloadConditions.Builder()
-            .requireWifi() // 仅在WIFI下下载模型，或者可以移除此限制
+            // 移除Wi-Fi限制，允许使用任何网络连接下载模型
+            // .requireWifi()
             .build()
         
         translator.downloadModelIfNeeded(conditions)

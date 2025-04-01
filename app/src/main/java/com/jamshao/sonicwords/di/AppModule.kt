@@ -8,6 +8,7 @@ import com.jamshao.sonicwords.data.database.AppDatabase
 import com.jamshao.sonicwords.network.TranslationApi
 import com.jamshao.sonicwords.service.TranslationService
 import com.jamshao.sonicwords.service.impl.MLKitTranslationService
+import com.jamshao.sonicwords.service.VoskRecognitionService
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -64,5 +65,11 @@ object AppModule {
     @Provides
     fun provideTranslationService(translationService: MLKitTranslationService): TranslationService {
         return translationService
+    }
+
+    @Provides
+    @Singleton
+    fun provideVoskRecognitionService(@ApplicationContext context: Context): VoskRecognitionService {
+        return VoskRecognitionService(context)
     }
 } 

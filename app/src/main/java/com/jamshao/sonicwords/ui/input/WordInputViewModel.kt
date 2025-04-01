@@ -70,30 +70,41 @@ class WordInputViewModel @Inject constructor(
     private fun translateWords(words: List<String>) {
         viewModelScope.launch {
             try {
+                val failedWords = mutableListOf<String>() // 记录翻译失败的单词
+                
                 words.forEach { word ->
                     try {
                         val translation = translationService.translateWord(word)
-                        val wordWithTranslation = WordWithTranslation(
-                            word = word,
-                            translation = translation
-                        )
-                        if (!currentWordsList.any { it.word == word }) {
-                            currentWordsList.add(wordWithTranslation)
+                        // 检查翻译结果是否包含"无法翻译"
+                        if (translation.contains("无法翻译")) {
+                            failedWords.add(word)
+                        } else {
+                            // 只有翻译成功的单词才添加到列表
+                            val wordWithTranslation = WordWithTranslation(
+                                word = word,
+                                translation = translation
+                            )
+                            if (!currentWordsList.any { it.word == word }) {
+                                currentWordsList.add(wordWithTranslation)
+                            }
                         }
                     } catch (e: Exception) {
-                        // 添加单词但标记翻译失败
-                        val wordWithTranslation = WordWithTranslation(
-                            word = word,
-                            translation = "翻译失败"
-                        )
-                        if (!currentWordsList.any { it.word == word }) {
-                            currentWordsList.add(wordWithTranslation)
-                        }
+                        // 翻译出错，记录失败单词
+                        failedWords.add(word)
                     }
                 }
                 
                 _translations.value = currentWordsList.toList()
                 _isLoading.value = false
+                
+                // 提示用户哪些单词无法翻译
+                if (failedWords.isNotEmpty()) {
+                    if (failedWords.size == words.size) {
+                        _errorMessage.value = "所有单词均无法翻译，请检查拼写或网络连接"
+                    } else {
+                        _errorMessage.value = "以下单词无法翻译，已跳过：${failedWords.joinToString(", ")}"
+                    }
+                }
             } catch (e: Exception) {
                 _errorMessage.value = "翻译过程中出错: ${e.message}"
                 _isLoading.value = false

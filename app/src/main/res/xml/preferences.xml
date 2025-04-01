@@ -29,6 +29,14 @@
         android:title="语音设置"
         app:iconSpaceReserved="false">
 
+        <!-- 临时注释掉测试麦克风权限的选项
+        <Preference
+            android:key="test_mic_permission"
+            android:title="测试麦克风权限"
+            android:summary="点击请求麦克风权限，用于语音识别功能"
+            app:iconSpaceReserved="false" />
+        -->
+
         <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="use_online_tts"
