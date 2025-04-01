@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SonicWords</string>
+    <string name="navigation_drawer_open">Open navigation drawer</string>
+    <string name="navigation_drawer_close">Close navigation drawer</string>
+    <string name="nav_header_title">Android Studio</string>
+    <string name="nav_header_subtitle">android.studio@android.com</string>
+    <string name="nav_header_desc">Navigation header</string>
+    <string name="action_settings">Settings</string>
+
+    <string name="menu_word_list">单词列表</string>
+    <string name="menu_word_study">单词学习</string>
+    <string name="menu_word_review">单词复习</string>
+    <string name="menu_word_input">单词输入</string>
+    <string name="menu_settings">设置</string>
+    
+    <!-- 语音输入相关 -->
+    <string name="voice_input">语音输入</string>
+    <string name="voice_not_available">语音不可用</string>
+    <string name="voice_listening">正在聆听…</string>
+    <string name="voice_start_speaking">请开始说话</string>
+    <string name="voice_recognition_success">识别成功</string>
+    <string name="voice_permission_required">需要麦克风权限才能使用语音输入功能</string>
+    <string name="voice_recognition_error">语音识别错误: %1$s</string>
+    <string name="voice_recognition_failed">启动语音识别失败: %1$s</string>
+    <string name="voice_prompt">请说出要添加的单词</string>
+    <string name="microphone_permission_title">需要麦克风权限</string>
+    
+    <!-- OCR相关 -->
+    <string name="camera_permission_title">需要相机权限</string>
+    <string name="camera_permission_required">需要相机权限才能使用OCR功能</string>
+    <string name="authorize">授权</string>
+    <string name="cancel">取消</string>
+    <string name="ocr_not_available">OCR功能不可用</string>
+    <string name="ocr_processing">正在处理图像…</string>
+    <string name="ocr_success">识别成功</string>
+    <string name="ocr_failed">识别失败: %1$s</string>
+    <string name="ocr_no_text">未识别到文本</string>
+    
+    <!-- 翻译相关 -->
+    <string name="translation_not_available">翻译功能不可用</string>
+    <string name="translation_downloading">正在下载翻译模型…</string>
+    <string name="translation_processing">正在翻译…</string>
+    <string name="translation_success">翻译成功</string>
+    <string name="translation_failed">翻译失败: %1$s</string>
+    
+    <!-- 单词选择 -->
+    <string name="select_words_title">选择要添加的单词</string>
+    <string name="add_selected_words">添加选中单词</string>
+    <string name="add_selected_words_count">添加选中单词 (%1$d)</string>
+    <string name="select_all">全选</string>
+    <string name="deselect_all">取消全选</string>
+    
+    <!-- 学习统计相关 -->
+    <string name="today_learned_format">今日已学习: %d</string>
+    <string name="today_study_time_format">学习时长: %s</string>
+    
+    <!-- 单词拼读相关 -->
+    <string name="spell_word_prompt">请拼读单词</string>
+    <string name="spell_word_listening">正在聆听...</string>
+    <string name="spell_word_recognizing">识别中...</string>
+    <string name="spell_word_correct">拼读正确!</string>
+    <string name="spell_word_incorrect">拼读不正确，请重试</string>
+    <string name="spell_word_error">语音识别错误，请重试</string>
+    <string name="spell_word_timeout">识别超时，请重试</string>
+    <string name="spell_word_no_speech">未检测到语音，请重试</string>
+    <string name="spell_word_unavailable">语音识别不可用</string>
+    
+    <!-- 对话框相关 -->
+    <string name="dialog_edit_translation_title">编辑翻译</string>
+    <string name="dialog_edit_meaning">英文释义</string>
+    <string name="dialog_edit_chinese_meaning">中文释义</string>
+    <string name="dialog_save">保存</string>
+    <string name="dialog_close">关闭</string>
+
+    <string name="please_spell_word">请拼读单词</string>
+    <string name="please_say">请说</string>
+    <string name="microphone_image">语音识别麦克风</string>
+    <string name="switch_recognition_mode">切换识别方式</string>
+    <string name="offline_recognition_mode">离线识别模式</string>
+    <string name="google_recognition_mode">Google云识别</string>
+    <string name="default_recognition_mode">默认识别</string>
+
+    <!-- 导航标题 -->
+    <string name="title_word_list">单词列表</string>
+    <string name="title_word_study">学习</string>
+    <string name="title_word_input">添加单词</string>
+    <string name="title_settings">设置</string>
+    
+    <!-- 设置相关 -->
+    <string name="settings_theme">主题设置</string>
+    <string name="settings_speech">语音设置</string>
+    <string name="settings_learning">学习设置</string>
+    <string name="settings_data">数据管理</string>
+    <string name="settings_about">关于</string>
+    
+    <string name="settings_theme_mode">应用主题</string>
+    <string name="settings_speech_rate">语音速度</string>
+    <string name="settings_speech_pitch">语音音调</string>
+    <string name="settings_speech_volume">语音音量</string>
+    <string name="settings_words_per_day">单词学习数量</string>
+    <string name="settings_recognition_timeout">语音识别超时</string>
+    <string name="settings_backup">备份数据</string>
+    <string name="settings_restore">恢复数据</string>
+    <string name="settings_clear">清除数据</string>
+    <string name="settings_version">版本信息</string>
+    <string name="settings_feedback">反馈</string>
+    
+    <!-- 主题模式 -->
+    <string name="settings_theme_mode_light">浅色主题</string>
+    <string name="settings_theme_mode_dark">深色主题</string>
+    <string name="settings_theme_mode_system">跟随系统</string>
+</resources>

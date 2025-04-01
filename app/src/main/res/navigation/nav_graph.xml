@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/navigation_word_list">
+
+    <fragment
+        android:id="@+id/navigation_word_list"
+        android:name="com.jamshao.sonicwords.ui.wordlist.WordListFragment"
+        android:label="单词列表"
+        tools:layout="@layout/fragment_word_list" />
+
+    <fragment
+        android:id="@+id/navigation_word_study"
+        android:name="com.jamshao.sonicwords.ui.wordstudy.WordStudyFragment"
+        android:label="单词学习"
+        tools:layout="@layout/fragment_word_study" />
+
+    <fragment
+        android:id="@+id/navigation_word_review"
+        android:name="com.jamshao.sonicwords.ui.wordreview.WordReviewFragment"
+        android:label="单词复习"
+        tools:layout="@layout/fragment_word_review" />
+
+    <fragment
+        android:id="@+id/navigation_word_input"
+        android:name="com.jamshao.sonicwords.ui.input.WordInputFragment"
+        android:label="添加单词"
+        tools:layout="@layout/fragment_word_input" />
+
+    <fragment
+        android:id="@+id/navigation_settings"
+        android:name="com.jamshao.sonicwords.ui.settings.SettingsFragment"
+        android:label="设置"
+        tools:layout="@layout/fragment_settings" />
+</navigation> 

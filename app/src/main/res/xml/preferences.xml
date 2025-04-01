@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <!-- 主题设置 -->
+    <PreferenceCategory
+        android:title="主题设置"
+        app:iconSpaceReserved="false">
+
+        <ListPreference
+            android:key="theme_mode"
+            android:title="应用主题"
+            android:summary="选择应用主题模式"
+            android:entries="@array/theme_entries"
+            android:entryValues="@array/theme_values"
+            android:defaultValue="system"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+            android:defaultValue="false"
+            android:key="dark_mode"
+            android:title="深色模式"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+    <!-- 语音设置 -->
+    <PreferenceCategory
+        android:title="语音设置"
+        app:iconSpaceReserved="false">
+
+        <SeekBarPreference
+            android:key="speech_rate"
+            android:title="语音速度"
+            android:summary="调整语音播报速度"
+            android:defaultValue="50"
+            android:max="100"
+            app:showSeekBarValue="true"
+            app:iconSpaceReserved="false" />
+
+        <SeekBarPreference
+            android:key="speech_pitch"
+            android:title="语音音调"
+            android:summary="调整语音播报音调"
+            android:defaultValue="50"
+            android:max="100"
+            app:showSeekBarValue="true"
+            app:iconSpaceReserved="false" />
+
+        <SeekBarPreference
+            android:key="speech_volume"
+            android:title="语音音量"
+            android:summary="调整语音播报音量"
+            android:defaultValue="100"
+            android:max="100"
+            app:showSeekBarValue="true"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+    <!-- 学习设置 -->
+    <PreferenceCategory
+        android:title="学习设置"
+        app:iconSpaceReserved="false">
+
+        <SeekBarPreference
+            android:key="words_per_day"
+            android:title="单词学习数量"
+            android:summary="每天学习的单词数量"
+            android:defaultValue="20"
+            android:max="50"
+            app:min="5"
+            app:showSeekBarValue="true"
+            app:iconSpaceReserved="false" />
+
+        <SeekBarPreference
+            android:key="recognition_timeout"
+            android:title="语音识别超时"
+            android:summary="语音识别超时时间（秒）"
+            android:defaultValue="5"
+            android:max="10"
+            app:min="3"
+            app:showSeekBarValue="true"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+            android:defaultValue="true"
+            android:key="auto_play"
+            android:title="自动播放单词"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+            android:defaultValue="true"
+            android:key="auto_next"
+            android:title="自动进入下一个单词"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+    <!-- 数据管理 -->
+    <PreferenceCategory
+        android:title="数据管理"
+        app:iconSpaceReserved="false">
+
+        <Preference
+            android:key="backup_data"
+            android:title="备份数据"
+            android:summary="将单词和学习数据备份到本地"
+            app:iconSpaceReserved="false" />
+
+        <Preference
+            android:key="restore_data"
+            android:title="恢复数据"
+            android:summary="从备份文件恢复单词和学习数据"
+            app:iconSpaceReserved="false" />
+
+        <Preference
+            android:key="clear_data"
+            android:title="清除数据"
+            android:summary="清除所有单词和学习数据"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+    <!-- 关于 -->
+    <PreferenceCategory
+        android:title="关于"
+        app:iconSpaceReserved="false">
+
+        <Preference
+            android:key="version"
+            android:title="版本信息"
+            android:summary="SonicWords v1.0.0"
+            app:iconSpaceReserved="false" />
+
+        <Preference
+            android:key="feedback"
+            android:title="反馈"
+            android:summary="发送反馈和建议"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+</PreferenceScreen>

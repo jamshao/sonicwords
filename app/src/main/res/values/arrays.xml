@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 背诵时长选项 -->
+    <string-array name="study_duration_entries">
+        <item>15分钟</item>
+        <item>30分钟</item>
+        <item>60分钟</item>
+    </string-array>
+    <string-array name="study_duration_values">
+        <item>15</item>
+        <item>30</item>
+        <item>60</item>
+    </string-array>
+
+    <!-- 单词数量选项 -->
+    <string-array name="word_count_entries">
+        <item>5个</item>
+        <item>10个</item>
+        <item>20个</item>
+    </string-array>
+    <string-array name="word_count_values">
+        <item>5</item>
+        <item>10</item>
+        <item>20</item>
+    </string-array>
+
+    <!-- 每次学习单词数量选项 -->
+    <string-array name="words_per_session_entries">
+        <item>10个</item>
+        <item>20个</item>
+        <item>30个</item>
+        <item>50个</item>
+    </string-array>
+    <string-array name="words_per_session_values">
+        <item>10</item>
+        <item>20</item>
+        <item>30</item>
+        <item>50</item>
+    </string-array>
+
+    <!-- 语音识别超时时间选项 -->
+    <string-array name="speech_timeout_entries">
+        <item>3秒</item>
+        <item>5秒</item>
+        <item>8秒</item>
+        <item>10秒</item>
+    </string-array>
+    <string-array name="speech_timeout_values">
+        <item>3000</item>
+        <item>5000</item>
+        <item>8000</item>
+        <item>10000</item>
+    </string-array>
+
+    <!-- 错误重试次数选项 -->
+    <string-array name="error_retry_entries">
+        <item>2次</item>
+        <item>5次</item>
+        <item>8次</item>
+    </string-array>
+    <string-array name="error_retry_values">
+        <item>2</item>
+        <item>5</item>
+        <item>8</item>
+    </string-array>
+
+    <!-- 发音类型选项 -->
+    <string-array name="pronunciation_type_entries">
+        <item>美式英语</item>
+        <item>英式英语</item>
+    </string-array>
+    <string-array name="pronunciation_type_values">
+        <item>us</item>
+        <item>uk</item>
+    </string-array>
+
+    <!-- 主题设置 -->
+    <string-array name="theme_entries">
+        <item>@string/settings_theme_mode_light</item>
+        <item>@string/settings_theme_mode_dark</item>
+        <item>@string/settings_theme_mode_system</item>
+    </string-array>
+    <string-array name="theme_values">
+        <item>light</item>
+        <item>dark</item>
+        <item>system</item>
+    </string-array>
+
+    <string-array name="word_types">
+        <item>名词</item>
+        <item>动词</item>
+        <item>形容词</item>
+        <item>副词</item>
+        <item>代词</item>
+        <item>介词</item>
+        <item>连词</item>
+        <item>数词</item>
+        <item>冠词</item>
+        <item>感叹词</item>
+        <item>其他</item>
+    </string-array>
+</resources>
