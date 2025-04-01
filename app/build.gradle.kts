@@ -55,6 +55,9 @@ dependencies {
     implementation(libs.androidx.navigation.ui.ktx)
     implementation("androidx.preference:preference-ktx:1.2.1")
     
+    // OkHttp
+    implementation("com.squareup.okhttp3:okhttp:4.10.0")
+    
     // Room
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
@@ -86,8 +89,9 @@ dependencies {
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
     
-    // Google Play Services Task
+    // Google Play Services
     implementation("com.google.android.gms:play-services-tasks:18.0.2")
+    implementation("com.google.android.gms:play-services-base:18.2.0")
     
     // Additional ML Kit dependencies
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")

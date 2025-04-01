@@ -5,30 +5,32 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Bundle
-import android.os.Environment
 import android.util.Log
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
 import android.widget.Toast
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.content.FileProvider
 import androidx.fragment.app.viewModels
-import androidx.preference.EditTextPreference
-import androidx.preference.PreferenceFragmentCompat
-import androidx.preference.PreferenceManager
-import androidx.preference.SwitchPreferenceCompat
-import androidx.preference.SeekBarPreference
 import androidx.preference.ListPreference
 import androidx.preference.Preference
+import androidx.preference.PreferenceFragmentCompat
+import androidx.preference.PreferenceManager
+import androidx.preference.SeekBarPreference
+import androidx.preference.SwitchPreferenceCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.snackbar.Snackbar
 import com.jamshao.sonicwords.R
+import com.jamshao.sonicwords.databinding.FragmentSettingsBinding
+import com.jamshao.sonicwords.utils.DataBackupUtils
+import com.jamshao.sonicwords.utils.OnlineTTSService
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -42,10 +44,13 @@ class SettingsFragment : PreferenceFragmentCompat(), SharedPreferences.OnSharedP
     
     private lateinit var backupFileLauncher: ActivityResultLauncher<Intent>
     private lateinit var restoreFileLauncher: ActivityResultLauncher<Intent>
+    
+    private lateinit var onlineTTSService: OnlineTTSService
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.preferences, rootKey)
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(requireContext())
+        onlineTTSService = OnlineTTSService(requireContext())
         
         // 初始化摘要
         updateWordsPerDaySummary()
@@ -53,6 +58,7 @@ class SettingsFragment : PreferenceFragmentCompat(), SharedPreferences.OnSharedP
         updateSpeechRateSummary()
         updateSpeechVolumeSummary()
         updateThemeSummary()
+        updateOnlineTTSVoiceSummary()
         
         // 设置主题切换监听
         findPreference<ListPreference>("theme_mode")?.setOnPreferenceChangeListener { _, newValue ->
@@ -62,6 +68,23 @@ class SettingsFragment : PreferenceFragmentCompat(), SharedPreferences.OnSharedP
                 else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
             }
             AppCompatDelegate.setDefaultNightMode(theme)
+            true
+        }
+        
+        // 在线TTS切换监听
+        findPreference<SwitchPreferenceCompat>("use_online_tts")?.setOnPreferenceChangeListener { _, newValue ->
+            settingsViewModel.updateUseOnlineTTS(newValue as Boolean)
+            true
+        }
+        
+        // 在线TTS音色选择监听
+        findPreference<ListPreference>("online_tts_voice")?.setOnPreferenceChangeListener { _, newValue ->
+            settingsViewModel.updateOnlineTTSVoice(newValue.toString())
+            updateOnlineTTSVoiceSummary()
+            
+            // 测试播放所选音色
+            testOnlineTTSVoice(newValue.toString())
+            
             true
         }
         
@@ -98,14 +121,37 @@ class SettingsFragment : PreferenceFragmentCompat(), SharedPreferences.OnSharedP
         registerFileLaunchers()
     }
     
+    private fun testOnlineTTSVoice(voice: String) {
+        settingsScope.launch {
+            val testText = "这是一个测试，看看这个声音怎么样？"
+            onlineTTSService.speak(testText)
+        }
+    }
+    
+    private fun updateOnlineTTSVoiceSummary() {
+        val preference = findPreference<ListPreference>("online_tts_voice")
+        val entries = resources.getStringArray(R.array.online_tts_voice_entries)
+        val values = resources.getStringArray(R.array.online_tts_voice_values)
+        
+        val voiceValue = sharedPreferences.getString("online_tts_voice", "FunAudioLLM/CosyVoice2-0.5B:charles") ?: "FunAudioLLM/CosyVoice2-0.5B:charles"
+        val index = values.indexOf(voiceValue)
+        val summary = if (index >= 0) entries[index] else "未知音色"
+        
+        preference?.summary = summary
+    }
+    
     private fun registerFileLaunchers() {
         backupFileLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == android.app.Activity.RESULT_OK) {
                 result.data?.data?.let { uri ->
                     settingsScope.launch {
                         try {
-                            // TODO: 实现数据备份逻辑
-                            Toast.makeText(requireContext(), "备份成功", Toast.LENGTH_SHORT).show()
+                            val success = DataBackupUtils.backupData(requireContext(), uri)
+                            if (success) {
+                                Toast.makeText(requireContext(), "备份成功", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(requireContext(), "备份失败", Toast.LENGTH_SHORT).show()
+                            }
                         } catch (e: Exception) {
                             Log.e("SettingsFragment", "备份失败", e)
                             Toast.makeText(requireContext(), "备份失败", Toast.LENGTH_SHORT).show()
@@ -120,8 +166,19 @@ class SettingsFragment : PreferenceFragmentCompat(), SharedPreferences.OnSharedP
                 result.data?.data?.let { uri ->
                     settingsScope.launch {
                         try {
-                            // TODO: 实现数据恢复逻辑
-                            Toast.makeText(requireContext(), "恢复成功", Toast.LENGTH_SHORT).show()
+                            val success = DataBackupUtils.restoreData(requireContext(), uri)
+                            if (success) {
+                                Toast.makeText(requireContext(), "恢复成功", Toast.LENGTH_SHORT).show()
+                                // 重新加载设置
+                                updateWordsPerDaySummary()
+                                updateRecognitionTimeoutSummary()
+                                updateSpeechRateSummary()
+                                updateSpeechVolumeSummary()
+                                updateThemeSummary()
+                                updateOnlineTTSVoiceSummary()
+                            } else {
+                                Toast.makeText(requireContext(), "恢复失败", Toast.LENGTH_SHORT).show()
+                            }
                         } catch (e: Exception) {
                             Log.e("SettingsFragment", "恢复失败", e)
                             Toast.makeText(requireContext(), "恢复失败", Toast.LENGTH_SHORT).show()
@@ -140,6 +197,12 @@ class SettingsFragment : PreferenceFragmentCompat(), SharedPreferences.OnSharedP
     override fun onPause() {
         super.onPause()
         sharedPreferences.unregisterOnSharedPreferenceChangeListener(this)
+        onlineTTSService.stop()
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        onlineTTSService.stop()
     }
     
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences, key: String?) {
@@ -149,6 +212,7 @@ class SettingsFragment : PreferenceFragmentCompat(), SharedPreferences.OnSharedP
             "speech_rate" -> updateSpeechRateSummary()
             "speech_volume" -> updateSpeechVolumeSummary()
             "theme_mode" -> updateThemeSummary()
+            "online_tts_voice" -> updateOnlineTTSVoiceSummary()
         }
     }
     
@@ -227,8 +291,19 @@ class SettingsFragment : PreferenceFragmentCompat(), SharedPreferences.OnSharedP
             .setPositiveButton("确定") { _, _ ->
                 settingsScope.launch {
                     try {
-                        // TODO: 实现数据清除逻辑
-                        Toast.makeText(requireContext(), "数据已清除", Toast.LENGTH_SHORT).show()
+                        val success = DataBackupUtils.clearData(requireContext())
+                        if (success) {
+                            Toast.makeText(requireContext(), "数据已清除", Toast.LENGTH_SHORT).show()
+                            // 重新加载设置
+                            updateWordsPerDaySummary()
+                            updateRecognitionTimeoutSummary()
+                            updateSpeechRateSummary()
+                            updateSpeechVolumeSummary()
+                            updateThemeSummary()
+                            updateOnlineTTSVoiceSummary()
+                        } else {
+                            Toast.makeText(requireContext(), "清除数据失败", Toast.LENGTH_SHORT).show()
+                        }
                     } catch (e: Exception) {
                         Log.e("SettingsFragment", "清除数据失败", e)
                         Toast.makeText(requireContext(), "清除数据失败", Toast.LENGTH_SHORT).show()
@@ -251,9 +326,5 @@ class SettingsFragment : PreferenceFragmentCompat(), SharedPreferences.OnSharedP
         } catch (e: Exception) {
             Toast.makeText(requireContext(), "未找到邮件应用", Toast.LENGTH_SHORT).show()
         }
-    }
-    
-    private fun getCurrentTimeString(): String {
-        return SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
     }
 }

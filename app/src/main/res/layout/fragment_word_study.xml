@@ -47,6 +47,47 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <!-- 统计数据 - 移到顶部区域 -->
+    <LinearLayout
+        android:id="@+id/ll_statistics"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginTop="8dp"
+        android:visibility="visible"
+        app:layout_constraintTop_toBottomOf="@+id/tv_current_letter"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <TextView
+            android:id="@+id/tvLearnedCount"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="今日已学习: 0"
+            android:textSize="12sp"
+            android:layout_marginEnd="4dp" />
+
+        <TextView
+            android:id="@+id/tvReviewCount"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="今日已复习: 0"
+            android:textSize="12sp"
+            android:layout_marginEnd="4dp" />
+
+        <TextView
+            android:id="@+id/tvStudyTime"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="今日学习时间: 0分钟"
+            android:textSize="12sp" />
+    </LinearLayout>
+
     <!-- 麦克风图标和提示 -->
     <LinearLayout
         android:id="@+id/speech_status_container"
@@ -54,10 +95,10 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:gravity="center"
-        app:layout_constraintBottom_toTopOf="@id/progressBar"
+        app:layout_constraintTop_toBottomOf="@id/ll_statistics"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        android:layout_marginBottom="16dp">
+        android:layout_marginTop="16dp">
 
         <ImageView
             android:id="@+id/micAnimationIcon"
@@ -111,9 +152,23 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
+        android:layout_marginEnd="8dp"
         android:text="发音"
         app:layout_constraintTop_toBottomOf="@id/tv_learned_status"
+        app:layout_constraintEnd_toStartOf="@+id/btn_record"
         app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintHorizontal_chainStyle="packed" />
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/btn_record"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:src="@android:drawable/ic_btn_speak_now"
+        android:contentDescription="按住说话"
+        app:layout_constraintTop_toTopOf="@+id/btn_pronounce"
+        app:layout_constraintBottom_toBottomOf="@+id/btn_pronounce"
+        app:layout_constraintStart_toEndOf="@+id/btn_pronounce"
         app:layout_constraintEnd_toEndOf="parent" />
 
     <androidx.viewpager2.widget.ViewPager2
@@ -121,32 +176,38 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:layout_marginBottom="16dp"
-        app:layout_constraintBottom_toTopOf="@+id/progress_bar"
+        app:layout_constraintBottom_toTopOf="@+id/progress_container"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/btn_pronounce" />
 
-    <ProgressBar
-        android:id="@+id/progress_bar"
-        style="?android:attr/progressBarStyleHorizontal"
+    <!-- 使用一个容器包裹进度条和文字 -->
+    <LinearLayout
+        android:id="@+id/progress_container"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:orientation="vertical"
         android:layout_marginStart="16dp"
         android:layout_marginEnd="16dp"
         android:layout_marginBottom="8dp"
-        app:layout_constraintBottom_toTopOf="@+id/tv_progress"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <TextView
-        android:id="@+id/tv_progress"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp"
-        android:text="0/0"
         app:layout_constraintBottom_toTopOf="@+id/ll_control_buttons"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
+        app:layout_constraintStart_toStartOf="parent">
+
+        <ProgressBar
+            android:id="@+id/progressBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <TextView
+            android:id="@+id/tvProgress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="0/0"
+            android:gravity="center"
+            android:layout_marginTop="4dp" />
+    </LinearLayout>
 
     <LinearLayout
         android:id="@+id/ll_control_buttons"
@@ -204,41 +265,5 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/tv_empty_state"
         tools:visibility="visible" />
-
-    <LinearLayout
-        android:id="@+id/ll_statistics"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
-        android:visibility="visible"
-        app:layout_constraintBottom_toTopOf="@+id/progress_bar"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent">
-
-        <TextView
-            android:id="@+id/tvLearnedCount"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="今日已学习: 0"
-            android:textSize="14sp"
-            android:layout_marginBottom="4dp" />
-
-        <TextView
-            android:id="@+id/tvReviewCount"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="今日已复习: 0"
-            android:textSize="14sp"
-            android:layout_marginBottom="4dp" />
-
-        <TextView
-            android:id="@+id/tvStudyTime"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="今日学习时间: 0分钟"
-            android:textSize="14sp" />
-    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

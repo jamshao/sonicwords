@@ -32,6 +32,13 @@ class SettingsViewModel @Inject constructor(
     private val _speechVolume = MutableStateFlow(sharedPreferences.getInt("speech_volume", 100))
     val speechVolume: StateFlow<Int> = _speechVolume.asStateFlow()
     
+    // 在线TTS设置
+    private val _useOnlineTTS = MutableStateFlow(sharedPreferences.getBoolean("use_online_tts", false))
+    val useOnlineTTS: StateFlow<Boolean> = _useOnlineTTS.asStateFlow()
+    
+    private val _onlineTTSVoice = MutableStateFlow(sharedPreferences.getString("online_tts_voice", "FunAudioLLM/CosyVoice2-0.5B:charles") ?: "FunAudioLLM/CosyVoice2-0.5B:charles")
+    val onlineTTSVoice: StateFlow<String> = _onlineTTSVoice.asStateFlow()
+    
     // 学习设置
     private val _wordsPerDay = MutableStateFlow(sharedPreferences.getInt("words_per_day", 20))
     val wordsPerDay: StateFlow<Int> = _wordsPerDay.asStateFlow()
@@ -64,6 +71,16 @@ class SettingsViewModel @Inject constructor(
     fun updateSpeechVolume(volume: Int) {
         sharedPreferences.edit().putInt("speech_volume", volume).apply()
         _speechVolume.value = volume
+    }
+    
+    fun updateUseOnlineTTS(enabled: Boolean) {
+        sharedPreferences.edit().putBoolean("use_online_tts", enabled).apply()
+        _useOnlineTTS.value = enabled
+    }
+    
+    fun updateOnlineTTSVoice(voice: String) {
+        sharedPreferences.edit().putString("online_tts_voice", voice).apply()
+        _onlineTTSVoice.value = voice
     }
     
     fun updateWordsPerDay(count: Int) {

@@ -10,6 +10,7 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
@@ -34,6 +35,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.*
 import android.content.ActivityNotFoundException
+import com.jamshao.sonicwords.utils.TTSHelper
+import com.google.android.gms.common.GoogleApiAvailability
 
 @AndroidEntryPoint
 class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScope by CoroutineScope(Dispatchers.Main) {
@@ -43,7 +46,7 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
 
     private val viewModel: WordStudyViewModel by viewModels()
     private lateinit var adapter: WordCardAdapter
-    private lateinit var tts: TextToSpeech
+    private lateinit var ttsHelper: TTSHelper
     private lateinit var speechRecognizer: SpeechRecognizer
     private lateinit var speechRecognizerIntent: android.content.Intent
     private var recognitionTimeout: Job? = null
@@ -51,6 +54,12 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
     // 添加变量来跟踪是否在使用备用语音识别方法
     private var useGoogleCloudRecognition = false
     private var useAlternativeRecognition = false
+    
+    // 添加变量跟踪谷歌服务可用性
+    private var isGooglePlayServicesAvailable = false
+    
+    // 标记是否正在手动录音
+    private var isManualRecording = false
 
     private val speechRecognitionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -104,7 +113,11 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        tts = TextToSpeech(requireContext(), this)
+        ttsHelper = TTSHelper(requireContext())
+        ttsHelper.init()
+        
+        // 检查Google Play服务可用性
+        checkGooglePlayServicesAvailability()
     }
 
     override fun onCreateView(
@@ -137,6 +150,9 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
                 Toast.makeText(context, "当前没有单词可朗读", Toast.LENGTH_SHORT).show()
             }
         }
+        
+        // 设置录音按钮的触摸事件
+        setupRecordButton()
         
         // 尝试设置语音识别，但即使失败也不影响其他功能
         try {
@@ -265,13 +281,19 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
                 binding.speechStatusText.text = "语音识别不可用"
                 binding.micAnimationIcon.setImageResource(android.R.drawable.ic_delete)
                 
-                // 显示提示，建议用户使用按钮选择
-                val noSpeechSnackbar = Snackbar.make(
-                    binding.root, 
-                    "此设备不支持语音识别，请直接点击按钮选择难度", 
-                    Snackbar.LENGTH_LONG
-                )
-                noSpeechSnackbar.show()
+                // 如果Google Play服务可用，尝试使用Google Cloud语音识别
+                if (isGooglePlayServicesAvailable) {
+                    useGoogleCloudRecognition = true
+                    binding.speechStatusText.text = "将使用Google云语音识别"
+                } else {
+                    // 显示提示，建议用户使用按钮选择
+                    val noSpeechSnackbar = Snackbar.make(
+                        binding.root, 
+                        "此设备不支持语音识别，请直接点击按钮选择难度或使用录音按钮", 
+                        Snackbar.LENGTH_LONG
+                    )
+                    noSpeechSnackbar.show()
+                }
                 return
             }
             
@@ -461,7 +483,7 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
         }
     }
 
-    private fun startListening() {
+    private fun startListening(isManual: Boolean = false) {
         try {
             // 根据当前设置选择合适的语音识别方法
             when {
@@ -482,9 +504,14 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
                         Log.d("WordStudyFragment", "语音识别器未初始化，尝试重新初始化")
                         setupSpeechRecognition()
                         if (!::speechRecognizer.isInitialized) {
-                            Log.w("WordStudyFragment", "尝试使用备用识别方法")
-                            useAlternativeRecognition = true
-                            startOfflineRecognition()
+                            // 根据Google Play服务可用性选择备用方法
+                            if (isGooglePlayServicesAvailable) {
+                                useGoogleCloudRecognition = true
+                                startGoogleCloudRecognition()
+                            } else {
+                                useAlternativeRecognition = true
+                                startOfflineRecognition()
+                            }
                             return
                         }
                     }
@@ -492,14 +519,34 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
                     // 检查设备是否支持语音识别
                     if (!SpeechRecognizer.isRecognitionAvailable(requireContext())) {
                         Log.w("WordStudyFragment", "设备不支持语音识别，尝试使用备用方法")
-                        useAlternativeRecognition = true
-                        startOfflineRecognition()
+                        // 根据Google Play服务可用性选择备用方法
+                        if (isGooglePlayServicesAvailable) {
+                            useGoogleCloudRecognition = true
+                            startGoogleCloudRecognition()
+                        } else {
+                            useAlternativeRecognition = true
+                            startOfflineRecognition()
+                        }
                         return
                     }
                     
                     // 继续使用标准SpeechRecognizer的方法
-                    // ... 现有的startListening逻辑 ...
-                    recognitionTimeout?.cancel()
+                    if (!isManual) {
+                        // 非手动模式下设置超时
+                        recognitionTimeout?.cancel()
+                        recognitionTimeout = launch { 
+                            try {
+                                delay(5000) 
+                                if (isAdded && ::speechRecognizer.isInitialized && !isManualRecording) {
+                                    Log.d("WordStudyFragment", "语音识别超时，重新开始")
+                                    speechRecognizer.stopListening()
+                                    startListening()
+                                }
+                            } catch (e: Exception) {
+                                Log.e("WordStudyFragment", "处理语音识别超时异常: ${e.message}")
+                            }
+                        }
+                    }
                     
                     // 检查视图和Fragment状态
                     if (!isAdded || _binding == null) {
@@ -518,36 +565,37 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
                         return
                     }
                     
-                    recognitionTimeout = launch { 
-                        try {
-                            delay(5000) 
-                            if (isAdded && ::speechRecognizer.isInitialized) {
-                                Log.d("WordStudyFragment", "语音识别超时，重新开始")
-                                speechRecognizer.stopListening()
-                                startListening()
-                            }
-                        } catch (e: Exception) {
-                            Log.e("WordStudyFragment", "处理语音识别超时异常: ${e.message}")
-                        }
-                    }
-                    
                     try {
-                        binding.speechStatusText.text = "请拼读单词"
+                        if (isManual) {
+                            binding.speechStatusText.text = "请说出单词..."
+                        } else {
+                            binding.speechStatusText.text = "请拼读单词"
+                        }
                         Log.d("WordStudyFragment", "开始语音识别")
                         speechRecognizer.startListening(speechRecognizerIntent)
                     } catch (e: Exception) {
                         Log.e("WordStudyFragment", "启动语音识别失败，尝试备用方法: ${e.message}", e)
-                        // 如果标准方法失败，切换到备用方法
-                        useAlternativeRecognition = true
-                        startOfflineRecognition()
+                        // 如果标准方法失败，根据Google Play服务可用性选择备用方法
+                        if (isGooglePlayServicesAvailable) {
+                            useGoogleCloudRecognition = true
+                            startGoogleCloudRecognition()
+                        } else {
+                            useAlternativeRecognition = true
+                            startOfflineRecognition()
+                        }
                     }
                 }
             }
         } catch (e: Exception) {
             Log.e("WordStudyFragment", "startListening总体异常，尝试备用方法: ${e.message}", e)
-            // 出现异常时切换到备用方法
-            useAlternativeRecognition = true
-            startOfflineRecognition()
+            // 出现异常时根据Google Play服务可用性选择备用方法
+            if (isGooglePlayServicesAvailable) {
+                useGoogleCloudRecognition = true
+                startGoogleCloudRecognition()
+            } else {
+                useAlternativeRecognition = true
+                startOfflineRecognition()
+            }
         }
     }
     
@@ -637,19 +685,12 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
 
     private fun speakCurrentLetter(word: Word?) {
         word?.word?.let {
-            tts.speak(it, TextToSpeech.QUEUE_FLUSH, null, "word_${it.hashCode()}")
+            ttsHelper.speak(it)
         }
     }
 
     override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            val result = tts.setLanguage(Locale.US)
-            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                Toast.makeText(requireContext(), "TTS 语言不支持", Toast.LENGTH_SHORT).show()
-            }
-        } else {
-            Toast.makeText(requireContext(), "TTS 初始化失败", Toast.LENGTH_SHORT).show()
-        }
+        // 已不再需要此方法，但由于实现了接口，保留一个空实现
     }
 
     override fun onDestroyView() {
@@ -664,10 +705,9 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
             Log.e("WordStudyFragment", "停止动画失败", e)
         }
         
-        if (::tts.isInitialized) {
+        if (::ttsHelper.isInitialized) {
             try {
-                tts.stop()
-                tts.shutdown()
+                ttsHelper.shutdown()
             } catch (e: Exception) {
                 Log.e("WordStudyFragment", "释放TTS资源失败", e)
             }
@@ -695,11 +735,20 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
         binding.btnSwitchRecognition.setOnClickListener {
             when {
                 !useAlternativeRecognition && !useGoogleCloudRecognition -> {
-                    // 从默认方式切换到Google云语音识别
-                    useGoogleCloudRecognition = true
-                    useAlternativeRecognition = false
-                    Toast.makeText(context, "已切换至Google云语音识别", Toast.LENGTH_SHORT).show()
-                    binding.btnSwitchRecognition.text = "切换至离线识别"
+                    // 根据Google Play服务可用性决定切换到哪种模式
+                    if (isGooglePlayServicesAvailable) {
+                        // 从默认方式切换到Google云语音识别
+                        useGoogleCloudRecognition = true
+                        useAlternativeRecognition = false
+                        Toast.makeText(context, "已切换至Google云语音识别", Toast.LENGTH_SHORT).show()
+                        binding.btnSwitchRecognition.text = "切换至离线识别"
+                    } else {
+                        // 直接切换到离线识别
+                        useGoogleCloudRecognition = false
+                        useAlternativeRecognition = true
+                        Toast.makeText(context, "已切换至离线识别", Toast.LENGTH_SHORT).show()
+                        binding.btnSwitchRecognition.text = "切换至默认识别"
+                    }
                 }
                 useGoogleCloudRecognition -> {
                     // 从Google云语音识别切换到离线识别
@@ -724,6 +773,50 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
             }
             // 立即使用新的识别方式
             startListening()
+        }
+    }
+
+    /**
+     * 检查Google Play服务可用性
+     */
+    private fun checkGooglePlayServicesAvailability() {
+        try {
+            val googleApiAvailability = GoogleApiAvailability.getInstance()
+            val resultCode = googleApiAvailability.isGooglePlayServicesAvailable(requireContext())
+            isGooglePlayServicesAvailable = (resultCode == com.google.android.gms.common.ConnectionResult.SUCCESS)
+            
+            Log.d("WordStudyFragment", "Google Play服务可用性: $isGooglePlayServicesAvailable")
+        } catch (e: Exception) {
+            Log.e("WordStudyFragment", "检查Google Play服务可用性失败: ${e.message}", e)
+            isGooglePlayServicesAvailable = false
+        }
+    }
+    
+    /**
+     * 设置录音按钮的触摸事件
+     */
+    private fun setupRecordButton() {
+        binding.btnRecord.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    // 按下按钮时开始录音
+                    isManualRecording = true
+                    binding.speechStatusText.text = "请说出单词..."
+                    startListening(true)
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    // 松开按钮时停止录音
+                    isManualRecording = false
+                    if (::speechRecognizer.isInitialized) {
+                        try {
+                            speechRecognizer.stopListening()
+                        } catch (e: Exception) {
+                            Log.e("WordStudyFragment", "停止语音识别失败: ${e.message}", e)
+                        }
+                    }
+                }
+            }
+            true
         }
     }
 }

@@ -29,6 +29,23 @@
         android:title="语音设置"
         app:iconSpaceReserved="false">
 
+        <SwitchPreferenceCompat
+            android:defaultValue="false"
+            android:key="use_online_tts"
+            android:title="使用在线语音合成"
+            android:summary="使用更自然的在线语音替代本地语音"
+            app:iconSpaceReserved="false" />
+
+        <ListPreference
+            android:defaultValue="FunAudioLLM/CosyVoice2-0.5B:charles"
+            android:key="online_tts_voice"
+            android:title="在线语音音色"
+            android:summary="选择在线语音合成的音色"
+            android:entries="@array/online_tts_voice_entries"
+            android:entryValues="@array/online_tts_voice_values"
+            android:dependency="use_online_tts"
+            app:iconSpaceReserved="false" />
+
         <SeekBarPreference
             android:key="speech_rate"
             android:title="语音速度"

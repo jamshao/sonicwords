@@ -99,4 +99,27 @@
         <item>感叹词</item>
         <item>其他</item>
     </string-array>
+
+    <!-- 在线TTS音色选项 -->
+    <string-array name="online_tts_voice_entries">
+        <item>沉稳男声 (alex)</item>
+        <item>低沉男声 (benjamin)</item>
+        <item>磁性男声 (charles)</item>
+        <item>欢快男声 (david)</item>
+        <item>沉稳女声 (anna)</item>
+        <item>激情女声 (bella)</item>
+        <item>温柔女声 (claire)</item>
+        <item>欢快女声 (diana)</item>
+    </string-array>
+
+    <string-array name="online_tts_voice_values">
+        <item>FunAudioLLM/CosyVoice2-0.5B:alex</item>
+        <item>FunAudioLLM/CosyVoice2-0.5B:benjamin</item>
+        <item>FunAudioLLM/CosyVoice2-0.5B:charles</item>
+        <item>FunAudioLLM/CosyVoice2-0.5B:david</item>
+        <item>FunAudioLLM/CosyVoice2-0.5B:anna</item>
+        <item>FunAudioLLM/CosyVoice2-0.5B:bella</item>
+        <item>FunAudioLLM/CosyVoice2-0.5B:claire</item>
+        <item>FunAudioLLM/CosyVoice2-0.5B:diana</item>
+    </string-array>
 </resources>
