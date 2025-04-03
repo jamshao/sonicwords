@@ -59,13 +59,23 @@ class OnlineTTSService(private val context: Context) {
      * 停止当前播放
      */
     fun stop() {
-        mediaPlayer?.apply {
-            if (isPlaying) {
-                stop()
+        try {
+            mediaPlayer?.apply {
+                if (isPlaying) {
+                    try {
+                        stop()
+                    } catch (e: IllegalStateException) {
+                        Log.w(TAG, "停止MediaPlayer时出错: ${e.message}")
+                    }
+                }
+                reset()
+                release()
             }
-            release()
+        } catch (e: Exception) {
+            Log.e(TAG, "释放MediaPlayer资源时出错", e)
+        } finally {
+            mediaPlayer = null
         }
-        mediaPlayer = null
     }
     
     /**
@@ -139,6 +149,8 @@ class OnlineTTSService(private val context: Context) {
             return@withContext false
         } catch (e: Exception) {
             Log.e(TAG, "语音合成失败", e)
+            // 确保在异常情况下也释放资源
+            stop()
             return@withContext false
         }
     }
@@ -147,21 +159,42 @@ class OnlineTTSService(private val context: Context) {
      * 从文件播放音频
      */
     private fun playFromFile(file: File, onComplete: () -> Unit) {
-        mediaPlayer = MediaPlayer().apply {
-            setDataSource(file.absolutePath)
-            setOnCompletionListener {
-                onComplete()
-                release()
-                mediaPlayer = null
+        try {
+            // 确保之前的播放器已经释放
+            stop()
+            
+            mediaPlayer = MediaPlayer().apply {
+                setDataSource(file.absolutePath)
+                setOnCompletionListener {
+                    onComplete()
+                    try {
+                        reset()
+                        release()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "播放完成后释放资源失败", e)
+                    } finally {
+                        mediaPlayer = null
+                    }
+                }
+                setOnErrorListener { _, what, extra ->
+                    Log.e(TAG, "MediaPlayer错误: $what, $extra")
+                    try {
+                        reset()
+                        release()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "播放错误后释放资源失败", e)
+                    } finally {
+                        mediaPlayer = null
+                    }
+                    false
+                }
+                prepare()
+                start()
             }
-            setOnErrorListener { _, what, extra ->
-                Log.e(TAG, "MediaPlayer错误: $what, $extra")
-                release()
-                mediaPlayer = null
-                false
-            }
-            prepare()
-            start()
+        } catch (e: Exception) {
+            Log.e(TAG, "播放文件失败: ${e.message}", e)
+            stop()
+            onComplete()
         }
     }
 } 

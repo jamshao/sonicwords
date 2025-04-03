@@ -29,7 +29,7 @@ class WordListViewModel @Inject constructor(
         _isLoading.value = true
         viewModelScope.launch {
             try {
-                wordRepository.allWords.collectLatest { words ->
+                wordRepository.allWords.collectLatest { _ ->
                     _isLoading.value = false
                 }
             } catch (e: Exception) {
@@ -83,7 +83,7 @@ class WordListViewModel @Inject constructor(
         _isLoading.value = true
         viewModelScope.launch {
             try {
-                wordRepository.getWordsByGroup(groupName).collectLatest { words ->
+                wordRepository.getWordsByGroup(groupName).collectLatest { _ ->
                     _isLoading.value = false
                 }
             } catch (e: Exception) {

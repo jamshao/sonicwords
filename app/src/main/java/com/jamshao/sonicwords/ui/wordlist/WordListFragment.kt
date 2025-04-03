@@ -35,6 +35,7 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import android.view.HapticFeedbackConstants
 
 @AndroidEntryPoint
 class WordListFragment : Fragment() {
@@ -89,6 +90,17 @@ class WordListFragment : Fragment() {
         }
     }
 
+    // 添加排序类型枚举
+    enum class SortType {
+        WORD,          // 按单词字母顺序
+        ERROR_COUNT,   // 按错误次数
+        CORRECT_COUNT, // 按正确次数
+        LAST_STUDY     // 按上次学习时间
+    }
+    
+    // 当前排序类型
+    private var currentSortType = SortType.WORD
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -104,6 +116,7 @@ class WordListFragment : Fragment() {
         setupObservers()
         setupClickListeners()
         setupItemTouchHelper()
+        setupSortButtons()
         
         // 添加菜单提供者
         val menuHost = requireActivity()
@@ -112,7 +125,7 @@ class WordListFragment : Fragment() {
 
     private fun setupRecyclerView() {
         adapter = WordAdapter(
-            onWordClick = { word: Word ->
+            onWordClick = { _: Word ->
                 // TODO: 处理单词点击事件
             },
             onSelectionChanged = { count ->
@@ -130,7 +143,15 @@ class WordListFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.allWords.collectLatest { words ->
-                    adapter.submitList(words)
+                    // 先应用排序
+                    val sortedWords = when (currentSortType) {
+                        SortType.WORD -> words.sortedBy { it.word }
+                        SortType.ERROR_COUNT -> words.sortedByDescending { it.errorCount }
+                        SortType.CORRECT_COUNT -> words.sortedByDescending { it.familiarity }
+                        SortType.LAST_STUDY -> words.sortedByDescending { it.lastStudyTime ?: 0 }
+                    }
+                    
+                    adapter.submitList(sortedWords)
                     binding.tvEmptyState.visibility = if (words.isEmpty()) View.VISIBLE else View.GONE
                 }
             }
@@ -148,16 +169,51 @@ class WordListFragment : Fragment() {
     }
 
     private fun setupClickListeners() {
-        binding.fabAddWord.setOnClickListener {
+        binding.fabAddWord.setOnClickListener { v ->
+            // 触觉反馈
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            
+            // 视觉反馈
+            v.animate().scaleX(0.9f).scaleY(0.9f).setDuration(50).withEndAction {
+                v.animate().scaleX(1f).scaleY(1f).setDuration(50).start()
+            }.start()
+            
             // TODO: 处理添加单词事件
         }
 
-        binding.btnDeleteSelected.setOnClickListener {
+        binding.btnDeleteSelected.setOnClickListener { v ->
             if (!::adapter.isInitialized) return@setOnClickListener
+            
+            // 触觉反馈
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            
+            // 视觉反馈
+            v.animate().scaleX(0.9f).scaleY(0.9f).setDuration(50).withEndAction {
+                v.animate().scaleX(1f).scaleY(1f).setDuration(50).start()
+            }.start()
+            
             val selectedWords = adapter.getSelectedItems()
             if (selectedWords.isNotEmpty()) {
-                selectedWords.forEach { word: Word -> viewModel.deleteWord(word) }
-                exitSelectionMode()
+                // 显示确认对话框
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle("删除单词")
+                    .setMessage("确定要删除选中的 ${selectedWords.size} 个单词吗？")
+                    .setPositiveButton("删除") { _, _ ->
+                        selectedWords.forEach { word: Word -> viewModel.deleteWord(word) }
+                        Snackbar.make(
+                            binding.root,
+                            "已删除 ${selectedWords.size} 个单词",
+                            Snackbar.LENGTH_LONG
+                        ).setAction("撤销") {
+                            // 提供撤销功能
+                            selectedWords.forEach { word: Word -> viewModel.insertWord(word) }
+                        }.show()
+                        exitSelectionMode()
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+            } else {
+                Snackbar.make(binding.root, "请先选择要删除的单词", Snackbar.LENGTH_SHORT).show()
             }
         }
     }
@@ -321,6 +377,73 @@ class WordListFragment : Fragment() {
                 .setNegativeButton("取消", null)
                 .show()
         }
+    }
+
+    /**
+     * 设置排序按钮
+     */
+    private fun setupSortButtons() {
+        binding.btnSortWord.setOnClickListener {
+            currentSortType = SortType.WORD
+            sortCurrentList()
+            updateSortButtonsUi()
+        }
+        
+        binding.btnSortError.setOnClickListener {
+            currentSortType = SortType.ERROR_COUNT
+            sortCurrentList()
+            updateSortButtonsUi()
+        }
+        
+        binding.btnSortCorrect.setOnClickListener {
+            currentSortType = SortType.CORRECT_COUNT
+            sortCurrentList()
+            updateSortButtonsUi()
+        }
+        
+        binding.btnSortTime.setOnClickListener {
+            currentSortType = SortType.LAST_STUDY
+            sortCurrentList()
+            updateSortButtonsUi()
+        }
+        
+        // 默认更新UI状态
+        updateSortButtonsUi()
+    }
+    
+    /**
+     * 更新排序按钮UI状态
+     */
+    private fun updateSortButtonsUi() {
+        // 重置所有按钮样式
+        binding.btnSortWord.alpha = 0.6f
+        binding.btnSortError.alpha = 0.6f
+        binding.btnSortCorrect.alpha = 0.6f
+        binding.btnSortTime.alpha = 0.6f
+        
+        // 高亮当前选中的按钮
+        when (currentSortType) {
+            SortType.WORD -> binding.btnSortWord.alpha = 1.0f
+            SortType.ERROR_COUNT -> binding.btnSortError.alpha = 1.0f
+            SortType.CORRECT_COUNT -> binding.btnSortCorrect.alpha = 1.0f
+            SortType.LAST_STUDY -> binding.btnSortTime.alpha = 1.0f
+        }
+    }
+    
+    /**
+     * 对当前列表进行排序
+     */
+    private fun sortCurrentList() {
+        val currentList = adapter.currentList
+        
+        val sortedList = when (currentSortType) {
+            SortType.WORD -> currentList.sortedBy { it.word }
+            SortType.ERROR_COUNT -> currentList.sortedByDescending { it.errorCount }
+            SortType.CORRECT_COUNT -> currentList.sortedByDescending { it.familiarity } 
+            SortType.LAST_STUDY -> currentList.sortedByDescending { it.lastStudyTime ?: 0 }
+        }
+        
+        adapter.submitList(sortedList)
     }
 
     override fun onDestroyView() {

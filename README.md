@@ -13,21 +13,32 @@ SonicWords 实现了基于语音识别的单词学习功能，用户需要通过
 #### 实现细节
 
 1. **语音识别实现**
-   - 使用 Android 的 `SpeechRecognizer` API 进行语音识别
-   - 支持中英文识别
-   - 设置 3 秒超时时间，防止用户长时间无响应
+   - 使用 Vosk 离线语音识别引擎，支持无网络环境下的语音识别
+   - 通过按钮按下触发识别，松开按钮结束识别，提供更精确的控制
+   - 支持字母级别的逐字母拼写和识别
+   - 配置为优化识别英文字母的模式
 
-2. **语音提示系统**
+2. **字母级别拼写功能**
+   - 实现单词按字母拼写的学习模式，提高拼写记忆效果
+   - 系统提示当前需要拼写的单词和中文翻译，然后等待用户语音输入该单词的所有字母。
+   - 用户也可以选择键盘输入单词的每个字母。系统进行判断
+   - 实时反馈拼写正确与否，正确则tts语音提示“真棒”自动进入下一个单词。
+   - 如果拼写错误，系统tts提示用户"您的字母拼写有误"，然后按字母进行单词发音拼写。提醒用户正确的发音。
+   - 拼写错误次数计数，错误超过三次将单词标记为困难
+
+3. **语音提示系统**
    - 使用 `TextToSpeech` 提供语音提示
    - 每个字母发音提示
    - 拼写错误时提供正确发音和字母提示
 
-3. **UI 显示**
+4. **UI 显示**
    - 显示当前需要拼写的单词的中文释义
+   - 显示当前需要拼写的字母
    - 显示用户语音输入的字母
-   - 显示学习状态
+   - 通过颜色变化提供视觉反馈（正确为绿色，错误为红色）
+   - 显示学习状态和进度
 
-4. **流程控制**
+5. **流程控制**
    - 单词切换时自动开始语音识别
    - 拼写完成后自动切换到下一个单词
    - 支持手动切换单词
@@ -53,40 +64,138 @@ SonicWords 实现了基于语音识别的单词学习功能，用户需要通过
 ```gradle
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
-    implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    implementation("androidx.activity:activity-compose:1.8.2")
+    implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
-    implementation("com.google.android.gms:play-services-speech:18.1.0")
-    implementation("com.google.android.gms:play-services-mlkit-speech-recognition:17.0.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    
+    // Vosk语音识别引擎
+    implementation("net.java.dev.jna:jna:5.13.0")
+    implementation("org.vosk:vosk-android:0.3.47")
+    
+    // 其他依赖...
 }
 ```
 
-2. **语音识别配置**
+2. **Vosk语音识别配置**
 ```kotlin
-speechRecognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-    putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, requireContext().packageName)
+// 初始化Vosk识别器
+private fun initializeVosk() {
+    lifecycleScope.launch {
+        try {
+            val success = voskRecognitionService.initializeRecognizer()
+            if (success) {
+                Log.d(TAG, "Vosk初始化成功")
+                // 配置Vosk为字母识别模式
+                configureVoskForLetters()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Vosk初始化异常: ${e.message}", e)
+        }
+    }
+}
+
+// 配置Vosk为字母识别模式
+private fun configureVoskForLetters() {
+    // 配置Vosk能够识别单个字母
+    val alphabet = listOf("a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", 
+                         "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z")
+    voskRecognitionService.configureVocabulary(alphabet)
 }
 ```
 
-3. **语音提示配置**
+3. **按钮触发语音识别**
 ```kotlin
-textToSpeech.speak(
-    "请拼写字母 ${letter.toUpperCase()}",
-    TextToSpeech.QUEUE_FLUSH,
-    null,
-    "speak_letter_${letter.lowercase()}"
-)
+// 设置录音按钮的触摸事件
+private fun setupRecordButton() {
+    binding.btnRecord.setOnTouchListener { _, event ->
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                // 按下按钮时开始录音
+                startListening()
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                // 松开按钮时停止录音
+                stopListening()
+            }
+        }
+        true
+    }
+}
 ```
 
-4. **超时处理**
+4. **字母级别拼写实现**
 ```kotlin
-recognitionTimeout = viewModelScope.launch {
-    delay(recognitionTimeoutDuration)
-    onTimeout()
+private fun processVoskResult(hypothesis: String) {
+    try {
+        val result = JSONObject(hypothesis)
+        val text = result.optString("text").trim().lowercase(Locale.US)
+        
+        if (!text.isNullOrEmpty()) {
+            binding.tvSpokenLetter.text = "您说: $text"
+            
+            // 获取当前单词和当前应拼写的字母
+            val currentWord = viewModel.getCurrentWord()
+            val currentLetter = viewModel.getCurrentLetter()
+            
+            if (currentWord != null && currentLetter != null) {
+                // 判断用户是否正确拼写了当前字母
+                if (viewModel.checkLetter(text)) {
+                    // 字母拼写正确
+                    binding.speechStatusText.text = "字母 ${currentLetter.uppercase()} 拼写正确!"
+                    
+                    // 移动到下一个字母
+                    val isWordComplete = viewModel.nextLetter()
+                    
+                    if (isWordComplete) {
+                        // 单词拼写完成，显示提示并准备下一个单词
+                        binding.speechStatusText.text = "单词拼写完成!"
+                    } else {
+                        // 准备拼写下一个字母
+                        val nextLetter = viewModel.getCurrentLetter()
+                        if (nextLetter != null) {
+                            // 更新UI显示下一个字母
+                            binding.tv_current_letter.text = "请拼读字母: ${nextLetter.uppercase()}"
+                            // 朗读下一个字母提示
+                            ttsHelper.speak("请拼读字母 ${nextLetter.uppercase()}")
+                        }
+                    }
+                } else {
+                    // 字母拼写错误
+                    binding.speechStatusText.text = "错误! 正确的字母是: ${currentLetter.uppercase()}"
+                }
+            }
+        }
+    } catch (e: Exception) {
+        Log.e(TAG, "解析结果失败: ${e.message}", e)
+    }
 }
+```
+
+5. **UI视觉反馈实现**
+```kotlin
+// 观察拼写状态变化
+viewModel.spellingState.observe(viewLifecycleOwner, Observer { state ->
+    when (state) {
+        WordStudyViewModel.SpellingState.CorrectLetter -> {
+            // 字母拼写正确的视觉反馈
+            binding.tvSpokenLetter.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
+        }
+        WordStudyViewModel.SpellingState.WrongLetter -> {
+            // 字母拼写错误的视觉反馈
+            binding.tvSpokenLetter.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark))
+        }
+        WordStudyViewModel.SpellingState.CompleteWord -> {
+            // 单词完成的视觉反馈
+            binding.tvSpokenLetter.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.black))
+            binding.tvSpokenLetter.text = "单词拼写完成!"
+        }
+        else -> {
+            // 重置文本颜色
+            binding.tvSpokenLetter.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.black))
+        }
+    }
+})
 ```
 
 #### 注意事项
@@ -567,3 +676,28 @@ data class LearningStatistics(
 
 ## 许可证
 MIT License
+
+## 最近更新记录
+
+### 2023-04-15：语音识别升级
+
+#### 主要更改：
+1. **语音识别引擎升级**：
+   - 从Google在线语音识别服务迁移至Vosk离线语音识别引擎
+   - 实现无网络环境下的语音识别功能
+   - 消除了对Google Play Services的依赖
+
+2. **字母级别的拼写功能**：
+   - 增加了逐字母拼写单词的功能
+   - 实现对每个字母的单独识别和评估
+   - 添加了实时反馈机制，包括视觉和语音提示
+
+3. **用户体验优化**：
+   - 改进按钮交互方式，使用按下开始、松开结束的直观操作方式
+   - 添加了颜色反馈，使学习过程更加直观
+   - 优化了提示信息，提供更清晰的引导
+
+4. **性能提升**：
+   - 减少了网络依赖，提高了应用的响应速度
+   - 降低了电量消耗，适合长时间学习场景
+   - 优化了内存使用，提高了整体性能

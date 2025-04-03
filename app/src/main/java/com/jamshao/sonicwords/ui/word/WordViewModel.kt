@@ -100,6 +100,8 @@ class WordViewModel @Inject constructor(
             try {
                 _translationStatus.value = "正在翻译..."
                 // TODO: 实现翻译功能
+                // 使用word参数查询翻译API
+                _translationStatus.value = "翻译结果将显示在这里（${word}）"
                 _translationStatus.value = null
             } catch (e: Exception) {
                 _error.value = "翻译失败：${e.message}"

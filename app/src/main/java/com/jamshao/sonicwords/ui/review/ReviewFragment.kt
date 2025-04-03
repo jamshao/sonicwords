@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import android.view.HapticFeedbackConstants
 
 @AndroidEntryPoint
 class ReviewFragment : Fragment() {
@@ -100,7 +101,15 @@ class ReviewFragment : Fragment() {
     }
 
     private fun setupButtons() {
-        binding.btnUnknown.setOnClickListener {
+        binding.btnUnknown.setOnClickListener { v ->
+            // 触觉反馈
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            
+            // 视觉反馈
+            v.animate().scaleX(0.9f).scaleY(0.9f).setDuration(50).withEndAction {
+                v.animate().scaleX(1f).scaleY(1f).setDuration(50).start()
+            }.start()
+            
             val currentWord = viewModel.currentWord.value
             if (currentWord != null) {
                 viewModel.updateWordStatus(currentWord, false)
@@ -108,7 +117,15 @@ class ReviewFragment : Fragment() {
             }
         }
 
-        binding.btnKnown.setOnClickListener {
+        binding.btnKnown.setOnClickListener { v ->
+            // 触觉反馈
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            
+            // 视觉反馈
+            v.animate().scaleX(0.9f).scaleY(0.9f).setDuration(50).withEndAction {
+                v.animate().scaleX(1f).scaleY(1f).setDuration(50).start()
+            }.start()
+            
             val currentWord = viewModel.currentWord.value
             if (currentWord != null) {
                 viewModel.updateWordStatus(currentWord, true)
@@ -116,7 +133,15 @@ class ReviewFragment : Fragment() {
             }
         }
 
-        binding.btnNext.setOnClickListener {
+        binding.btnNext.setOnClickListener { v ->
+            // 触觉反馈
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            
+            // 视觉反馈
+            v.animate().scaleX(0.9f).scaleY(0.9f).setDuration(50).withEndAction {
+                v.animate().scaleX(1f).scaleY(1f).setDuration(50).start()
+            }.start()
+            
             moveToNextWord()
         }
     }

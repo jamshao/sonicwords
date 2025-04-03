@@ -8,6 +8,7 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.jamshao.sonicwords.data.entity.Word
 import com.jamshao.sonicwords.databinding.ItemWordBinding
+import com.jamshao.sonicwords.R
 
 class WordAdapter(
     private val onWordClick: (Word) -> Unit,
@@ -116,14 +117,49 @@ class WordAdapter(
                 
                 // 设置学习状态
                 if (word.isLearned) {
-                    tvLearningStatus.visibility = View.VISIBLE
                     tvLearningStatus.text = "已学习"
+                    tvLearningStatus.background = itemView.context.getDrawable(android.R.color.holo_green_dark)
                 } else {
-                    tvLearningStatus.visibility = View.GONE
+                    tvLearningStatus.text = "新单词"
+                    tvLearningStatus.background = itemView.context.getDrawable(R.color.unknown)
+                }
+                
+                // 设置错误次数
+                tvErrorCount.text = "错误: ${word.errorCount}次"
+                
+                // 设置正确次数 (使用familiarity*10作为正确次数的近似值)
+                val correctCount = (word.familiarity * 10).toInt()
+                tvCorrectCount.text = "正确: ${correctCount}次"
+                
+                // 设置上次练习时间
+                word.lastStudyTime?.let { lastTime ->
+                    val timeString = formatTimeAgo(lastTime)
+                    tvLastStudyTime.text = "上次练习: $timeString"
+                    tvLastStudyTime.visibility = View.VISIBLE
+                } ?: run {
+                    tvLastStudyTime.visibility = View.GONE
                 }
                 
                 // 设置熟悉度
-                progressFamiliarity.progress = (word.familiarity * 20).toInt()
+                progressFamiliarity.progress = (word.familiarity * 100).toInt()
+                tvFamiliarityLabel.text = "熟悉度: ${(word.familiarity * 100).toInt()}%"
+            }
+        }
+        
+        /**
+         * 格式化时间为"多久以前"的形式
+         */
+        private fun formatTimeAgo(timestamp: Long): String {
+            val now = System.currentTimeMillis()
+            val diff = now - timestamp
+            
+            return when {
+                diff < 60 * 1000 -> "刚刚"
+                diff < 60 * 60 * 1000 -> "${diff / (60 * 1000)}分钟前"
+                diff < 24 * 60 * 60 * 1000 -> "${diff / (60 * 60 * 1000)}小时前"
+                diff < 30 * 24 * 60 * 60 * 1000L -> "${diff / (24 * 60 * 60 * 1000)}天前"
+                diff < 12 * 30 * 24 * 60 * 60 * 1000L -> "${diff / (30 * 24 * 60 * 60 * 1000L)}月前"
+                else -> "${diff / (12 * 30 * 24 * 60 * 60 * 1000L)}年前"
             }
         }
     }

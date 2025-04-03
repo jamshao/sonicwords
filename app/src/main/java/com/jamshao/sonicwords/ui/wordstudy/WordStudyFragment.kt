@@ -4,10 +4,12 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.util.Log
+import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
@@ -20,32 +22,22 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Observer
 import androidx.lifecycle.lifecycleScope
 import androidx.viewpager2.widget.ViewPager2
-import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import com.jamshao.sonicwords.R
-import com.jamshao.sonicwords.ui.wordstudy.WordCardAdapter
 import com.jamshao.sonicwords.data.entity.Word
 import com.jamshao.sonicwords.databinding.FragmentWordStudyBinding
+import com.jamshao.sonicwords.service.VoskRecognitionService
+import com.jamshao.sonicwords.utils.TTSHelper
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.util.*
-import android.content.ActivityNotFoundException
-import com.jamshao.sonicwords.utils.TTSHelper
-import com.google.android.gms.common.GoogleApiAvailability
 import org.json.JSONObject
-import com.jamshao.sonicwords.service.VoskRecognitionService
-import javax.inject.Inject
-import android.speech.RecognitionListener as AndroidRecognitionListener
 import org.vosk.android.RecognitionListener as VoskRecognitionListener
-import android.content.Context
-import android.net.ConnectivityManager
-import android.os.PowerManager
-import android.annotation.SuppressLint
+import java.util.Locale
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScope by CoroutineScope(Dispatchers.Main) {
@@ -58,18 +50,10 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
     private val viewModel: WordStudyViewModel by viewModels()
     private lateinit var adapter: WordCardAdapter
     private lateinit var ttsHelper: TTSHelper
-    private lateinit var speechRecognizer: SpeechRecognizer
-    private lateinit var speechRecognizerIntent: android.content.Intent
     private var recognitionTimeout: Job? = null
     
-    // 添加使用标志
-    private var useVoskRecognition = true
-    private var useGoogleCloudRecognition = false
-    private var useAlternativeRecognition = false
-    private var isManualRecording = false
-    
-    // 添加谷歌服务可用性标记
-    private var isGooglePlayServicesAvailable = false
+    // 只保留Vosk识别
+    private var isListening = false
     
     @Inject
     lateinit var voskRecognitionService: VoskRecognitionService
@@ -101,10 +85,7 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
             
             Log.e(TAG, "Vosk识别错误: ${exception?.message}", exception)
             binding.speechStatusText.text = "识别出错，请重试"
-            
-            // 如果Vosk出错，尝试使用其他识别方式
-            useAlternativeRecognition = true
-            startListening()
+            isListening = false
         }
 
         override fun onTimeout() {
@@ -112,7 +93,7 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
             
             Log.w(TAG, "Vosk识别超时")
             binding.speechStatusText.text = "识别超时，请重试"
-            startListening()
+            isListening = false
         }
     }
     
@@ -131,31 +112,52 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
     private fun processVoskResult(hypothesis: String) {
         try {
             val result = JSONObject(hypothesis)
-            val text = result.optString("text")
-            val cleanText = text.trim().lowercase(Locale.US)
+            val text = result.optString("text").trim().lowercase(Locale.US)
             
-            if (!cleanText.isNullOrEmpty()) {
-                binding.tvSpokenLetter.text = "您说: $cleanText"
+            if (!text.isNullOrEmpty()) {
+                binding.tvSpokenLetter.text = "您说: $text"
                 
-                val currentWord = viewModel.words.value?.getOrNull(viewModel.currentWordIndex.value ?: -1)
-                if (currentWord != null && cleanText == currentWord.word.lowercase(Locale.US)) {
-                    Log.d(TAG, "Vosk识别单词正确: $cleanText")
-                    binding.speechStatusText.text = "发音正确!"
-                    viewModel.markWordAsKnown(currentWord)
-                    goToNextWord()
-                } else {
-                    Log.d(TAG, "Vosk识别不匹配: '$cleanText' vs '${currentWord?.word}'")
-                    binding.speechStatusText.text = "发音不匹配，请重试"
-                    if (currentWord != null) {
-                        speakCurrentLetter(currentWord)
+                // 获取当前单词
+                val currentWord = viewModel.getCurrentWord()
+                
+                if (currentWord != null) {
+                    // 判断用户是否正确拼写了整个单词
+                    if (viewModel.checkWholeWord(text)) {
+                        // 单词拼写正确
+                        binding.speechStatusText.text = "拼写正确!"
+                        Toast.makeText(requireContext(), "单词 ${currentWord.word} 拼写正确!", Toast.LENGTH_SHORT).show()
+                        
+                        // 延迟后切换到下一个单词
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            goToNextWord()
+                        }, 1500)
+                    } else {
+                        // 单词拼写错误
+                        binding.speechStatusText.text = "拼写错误! 请再试一次"
+                        
+                        // 获取错误次数
+                        val errorCount = viewModel.currentWordErrorCount.value ?: 0
+                        
+                        // 如果错误次数达到3次，显示正确的拼写
+                        if (errorCount >= 3) {
+                            val correctSpelling = viewModel.getCorrectSpelling()
+                            if (correctSpelling != null) {
+                                binding.speechStatusText.text = "正确的拼写是: $correctSpelling"
+                                ttsHelper.speak("正确的拼写是 ${correctSpelling}")
+                                Toast.makeText(requireContext(), "单词已标记为困难", Toast.LENGTH_SHORT).show()
+                            }
+                            
+                            // 延迟后切换到下一个单词
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                goToNextWord()
+                            }, 3000)
+                        }
                     }
-                    startListening()
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "解析结果失败: ${e.message}", e)
             binding.speechStatusText.text = "请重新拼读单词"
-            startListening()
         }
     }
 
@@ -179,14 +181,14 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         if (isGranted) {
-            initSpeechRecognizer()
+            // 权限已授予，不需要再次初始化语音识别
         } else {
             Toast.makeText(requireContext(), R.string.voice_permission_required, Toast.LENGTH_LONG).show()
             binding.speechStatusText.text = "需要麦克风权限"
         }
     }
 
-    // 添加谷歌云语音识别活动结果处理器
+    // 添加语音识别活动结果处理器
     private val cloudRecognitionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -195,17 +197,15 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
             val results = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
             if (!results.isNullOrEmpty()) {
                 val spokenText = results[0].lowercase(Locale.US)
-                // 处理识别结果
-                handleRecognitionResult(spokenText)
+                // 处理语音识别结果
+                processVoskResult(JSONObject().put("text", spokenText).toString())
             } else {
-                Log.w("WordStudyFragment", "未能从Google云语音识别获取结果")
+                Log.w("WordStudyFragment", "未能获取语音识别结果")
                 binding.speechStatusText.text = "未能识别，请重试"
-                startListening()
             }
         } else {
-            Log.w("WordStudyFragment", "Google云语音识别被取消或失败")
+            Log.w("WordStudyFragment", "语音识别被取消或失败")
             binding.speechStatusText.text = "识别取消，请重试"
-            startListening()
         }
     }
 
@@ -214,10 +214,7 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
         ttsHelper = TTSHelper(requireContext())
         ttsHelper.init()
         
-        // 检查Google Play服务可用性
-        checkGooglePlayServicesAvailability()
-        
-        // 尝试初始化Vosk
+        // 初始化Vosk
         initializeVosk()
     }
 
@@ -238,45 +235,63 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
         setupViewPager()
         setupObservers()
         
-        // 添加语音识别方法切换按钮
-        setupRecognitionMethodSwitch()
-        
         // 设置发音按钮的点击事件
-        binding.btnPronounce.setOnClickListener {
-            // 获取当前选中的单词索引
-            val currentIndex = binding.viewpagerWordCards.currentItem
-            val currentWord = viewModel.words.value?.getOrNull(currentIndex)
-            
-            if (currentWord != null) {
-                speakCurrentLetter(currentWord)
-                Toast.makeText(context, "正在朗读: ${currentWord.word}", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(context, "当前没有单词可朗读", Toast.LENGTH_SHORT).show()
-            }
-        }
-        
-        // 设置录音按钮的触摸事件
-        setupRecordButton()
-        
-        // 设置上一个和下一个按钮的点击事件
-        setupNavigationButtons()
+        setupClickListeners()
         
         // 观察单词列表以配置Vosk词汇表
         viewModel.words.observe(viewLifecycleOwner) { words ->
-            // 配置Vosk词汇表
-            if (words.isNotEmpty() && useVoskRecognition) {
-                val wordTexts = words.map { it.word.lowercase().trim() }
-                voskRecognitionService.configureVocabulary(wordTexts)
+            if (words.isNotEmpty()) {
+                // 配置Vosk为单词识别模式而非字母模式
+                configureVoskForWords(words)
+                
+                adapter.submitList(words)
+                updateProgressUI(viewModel.currentWordIndex.value ?: 0, words.size)
+                binding.tvEmptyState.visibility = if (words.isEmpty()) View.VISIBLE else View.GONE
+                
+                // 获取当前单词并设置字母提示
+                val currentWord = viewModel.getCurrentWord()
+                if (currentWord != null) {
+                    speakCurrentWord(currentWord)
+                }
             }
-            
-            adapter.submitList(words)
-            updateProgressUI(viewModel.currentWordIndex.value ?: 0, words.size)
-            binding.tvEmptyState.visibility = if (words.isEmpty()) View.VISIBLE else View.GONE
         }
         
+        // 观察当前单词索引变化
         viewModel.currentWordIndex.observe(viewLifecycleOwner, Observer { index ->
             binding.viewpagerWordCards.currentItem = index
             updateProgressUI(index, adapter.itemCount)
+            
+            // 获取当前单词并重置拼写状态
+            val currentWord = viewModel.getCurrentWord()
+            if (currentWord != null) {
+                viewModel.resetSpelling()
+                // 确保停止之前的TTS播放，避免重复
+                ttsHelper.stop()
+                speakCurrentWord(currentWord)
+            }
+        })
+
+        // 观察拼写状态变化
+        viewModel.spellingState.observe(viewLifecycleOwner, Observer { state ->
+            when (state) {
+                WordStudyViewModel.SpellingState.CorrectLetter -> {
+                    // 字母拼写正确的视觉反馈
+                    binding.tvSpokenLetter.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
+                }
+                WordStudyViewModel.SpellingState.WrongLetter -> {
+                    // 字母拼写错误的视觉反馈
+                    binding.tvSpokenLetter.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark))
+                }
+                WordStudyViewModel.SpellingState.CompleteWord -> {
+                    // 单词完成的视觉反馈
+                    binding.tvSpokenLetter.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.black))
+                    binding.tvSpokenLetter.text = "单词拼写完成!"
+                }
+                else -> {
+                    // 重置文本颜色
+                    binding.tvSpokenLetter.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.black))
+                }
+            }
         })
 
         viewModel.todayLearnedCount.observe(viewLifecycleOwner, Observer { count ->
@@ -289,6 +304,22 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
         
         viewModel.todayStudyTime.observe(viewLifecycleOwner, Observer { timeString ->
             binding.tvStudyTime.text = getString(R.string.today_study_time_format, timeString)
+        })
+
+        // 观察学习模式，更新UI
+        viewModel.currentMode.observe(viewLifecycleOwner, Observer { mode ->
+            if (mode != null) {
+                when (mode) {
+                    WordStudyViewModel.StudyMode.NEW_WORDS -> {
+                        binding.btnToggleMode.text = "切换到复习模式"
+                        binding.tvModeIndicator.text = "新词学习模式"
+                    }
+                    WordStudyViewModel.StudyMode.REVIEW -> {
+                        binding.btnToggleMode.text = "切换到新词模式"
+                        binding.tvModeIndicator.text = "单词复习模式"
+                    }
+                }
+            }
         })
     }
     
@@ -308,6 +339,7 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
             binding.speechStatusText
             binding.micAnimationIcon
             binding.tvSpokenLetter
+            binding.tvCurrentLetter
         } catch (e: Exception) {
             Log.e("WordStudyFragment", "UI组件检查失败，可能缺少某些视图: ${e.message}", e)
             Toast.makeText(context, "界面加载错误，请重试", Toast.LENGTH_SHORT).show()
@@ -317,7 +349,6 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
     private fun setupViewPager() {
         adapter = WordCardAdapter(
             onEasyClick = { word ->
-                speakCurrentLetter(word)
                 viewModel.markWordAsEasy(word)
                 goToNextWord()
             },
@@ -335,11 +366,12 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
         binding.viewpagerWordCards.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
                 super.onPageSelected(position)
-                adapter.currentList.getOrNull(position)?.let { speakCurrentLetter(it) }
-                
-                // 如果支持语音识别，才开始监听
-                if (::speechRecognizer.isInitialized) {
-                    startListening()
+                val currentWord = viewModel.getCurrentWord()
+                if (currentWord != null) {
+                    viewModel.resetSpelling()
+                    // 确保停止之前的TTS播放，避免重复
+                    ttsHelper.stop()
+                    speakCurrentWord(currentWord)
                 }
             }
         })
@@ -382,83 +414,59 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
     }
 
     private fun goToNextWord() {
-        val currentPosition = binding.viewpagerWordCards.currentItem
-        if (currentPosition < adapter.itemCount - 1) {
-            binding.viewpagerWordCards.currentItem = currentPosition + 1
-        } else {
-            Toast.makeText(requireContext(), "学习完成！", Toast.LENGTH_SHORT).show()
+        viewModel.nextWord()
+        // 重置UI状态
+        resetUIState()
+    }
+    
+    private fun goToPreviousWord() {
+        viewModel.previousWord()
+        // 重置UI状态
+        resetUIState()
+    }
+    
+    private fun resetUIState() {
+        // 重置错误状态显示
+        binding.speechStatusText.text = getString(R.string.please_spell_word)
+        binding.tvSpokenLetter.text = ""
+        
+        // 重置键盘输入框
+        binding.etLetterInput.setText("")
+        
+        // 停止当前的语音识别
+        stopListening()
+        
+        // 获取当前单词并重新播放，但先停止当前TTS播放
+        val currentWord = viewModel.getCurrentWord()
+        if (currentWord != null) {
+            ttsHelper.stop()
+            speakCurrentWord(currentWord)
         }
     }
 
-    private fun setupSpeechRecognition() {
-        try {
-            // 检查Fragment是否附加到Activity
-            if (!isAdded || _binding == null) {
-                Log.w("WordStudyFragment", "setupSpeechRecognition: Fragment未附加或binding为空")
-                return
+    private fun setupPermissions() {
+        // 检查麦克风权限
+        when {
+            ContextCompat.checkSelfPermission(
+                requireContext(),
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED -> {
+                // 已有权限，不需要任何操作
+                Log.d("WordStudyFragment", "已有麦克风权限")
             }
-            
-            // 检查语音识别服务是否可用
-            if (!SpeechRecognizer.isRecognitionAvailable(requireContext())) {
-                Log.w("WordStudyFragment", "设备不支持语音识别")
-                Toast.makeText(requireContext(), "语音识别不可用，您将无法使用语音拼读功能", Toast.LENGTH_LONG).show()
-                binding.speechStatusText.text = "语音识别不可用"
-                binding.micAnimationIcon.setImageResource(android.R.drawable.ic_delete)
-                
-                // 如果Google Play服务可用，尝试使用Google Cloud语音识别
-                if (isGooglePlayServicesAvailable) {
-                    useGoogleCloudRecognition = true
-                    binding.speechStatusText.text = "将使用Google云语音识别"
-                } else {
-                    // 显示提示，建议用户使用按钮选择
-                    val noSpeechSnackbar = Snackbar.make(
-                        binding.root, 
-                        "此设备不支持语音识别，请直接点击按钮选择难度或使用录音按钮", 
-                        Snackbar.LENGTH_LONG
-                    )
-                    noSpeechSnackbar.show()
-                }
-                return
+            shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) -> {
+                // 需要解释为什么需要权限
+                Log.d("WordStudyFragment", "需要向用户解释麦克风权限用途")
+                showPermissionRationaleDialog()
             }
-            
-            // 创建并开始话筒动画
-            try {
-                val animation = android.view.animation.AnimationUtils.loadAnimation(
-                    requireContext(), 
-                    R.anim.mic_pulse
-                )
-                binding.micAnimationIcon.startAnimation(animation)
-            } catch (e: Exception) {
-                Log.e("WordStudyFragment", "启动麦克风动画失败: ${e.message}")
-                // 动画失败不阻止后续流程
+            else -> {
+                // 首次请求权限
+                Log.d("WordStudyFragment", "首次请求麦克风权限")
+                requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             }
-            
-            // 检查麦克风权限
-            when {
-                ContextCompat.checkSelfPermission(
-                    requireContext(),
-                    Manifest.permission.RECORD_AUDIO
-                ) == PackageManager.PERMISSION_GRANTED -> {
-                    // 已有权限，初始化语音识别
-                    Log.d("WordStudyFragment", "已有麦克风权限，初始化语音识别")
-                    initSpeechRecognizer()
-                }
-                shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) -> {
-                    // 需要解释为什么需要权限
-                    Log.d("WordStudyFragment", "需要向用户解释麦克风权限用途")
-                    showPermissionRationaleDialog()
-                }
-                else -> {
-                    // 首次请求权限
-                    Log.d("WordStudyFragment", "首次请求麦克风权限")
-                    requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("WordStudyFragment", "setupSpeechRecognition异常: ${e.message}", e)
         }
     }
-    
+
     private fun showPermissionRationaleDialog() {
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.microphone_permission_title)
@@ -469,44 +477,8 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
-    
-    private fun initSpeechRecognizer() {
-        try {
-            // 检查Fragment是否附加
-            if (!isAdded) {
-                Log.w(TAG, "Fragment未附加，跳过语音识别器初始化")
-                return
-            }
-            
-            // 创建语音识别器
-            Log.d(TAG, "开始创建语音识别器")
-            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(requireContext())
-            
-            // 配置语音识别意图
-            speechRecognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, requireContext().packageName)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.US)
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-            }
-            
-            // 设置识别监听器
-            speechRecognizer.setRecognitionListener(createRecognitionListener())
-            
-            // 初始化成功后启动语音识别
-            Log.d(TAG, "语音识别器初始化成功，开始监听")
-            startListening()
-        } catch (e: Exception) {
-            Log.e(TAG, "初始化语音识别失败: ${e.message}", e)
-            if (isAdded && _binding != null) {
-                Toast.makeText(requireContext(), "初始化语音识别失败: ${e.message}", Toast.LENGTH_SHORT).show()
-                binding.speechStatusText.text = "语音识别初始化失败"
-            }
-        }
-    }
 
-    private fun startListening(isManual: Boolean = false) {
+    private fun startListening() {
         try {
             // 检查麦克风权限
             if (ContextCompat.checkSelfPermission(
@@ -518,263 +490,112 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
                 return
             }
 
-            // 首先尝试使用Vosk离线识别
-            if (useVoskRecognition && voskRecognitionService.isReady) {
+            // 使用Vosk离线识别
+            if (voskRecognitionService.isReady && !isListening) {
                 binding.speechStatusText.text = "请拼读单词"
                 voskRecognitionService.startListening(voskRecognitionListener)
-                return
-            }
-
-            // 检查网络连接状态
-            if (useGoogleCloudRecognition && !isNetworkAvailable()) {
-                Toast.makeText(context, "网络不可用，将使用本地识别", Toast.LENGTH_SHORT).show()
-                useGoogleCloudRecognition = false
-            }
-
-            // 检查设备是否支持语音识别
-            val isRecognitionAvailable = requireContext().packageManager
-                .queryIntentActivities(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH), 0)
-                .isNotEmpty()
-
-            if (!isRecognitionAvailable) {
-                Toast.makeText(context, "该设备不支持语音识别", Toast.LENGTH_SHORT).show()
-                binding.speechStatusText.text = "设备不支持语音识别"
-                return
-            }
-
-            // 检查省电模式
-            if (isPowerSaveMode()) {
-                Toast.makeText(context, "设备处于省电模式，语音识别可能受限", Toast.LENGTH_SHORT).show()
-            }
-
-            // 根据设置选择识别方式
-            when {
-                // 使用Google云识别
-                useGoogleCloudRecognition -> {
-                    startGoogleCloudRecognition()
+                isListening = true
+                
+                // 创建并开始话筒动画
+                try {
+                    val animation = android.view.animation.AnimationUtils.loadAnimation(
+                        requireContext(), 
+                        R.anim.mic_pulse
+                    )
+                    binding.micAnimationIcon.startAnimation(animation)
+                } catch (e: Exception) {
+                    Log.e("WordStudyFragment", "启动麦克风动画失败: ${e.message}")
                 }
-                // 使用本地语音识别器
-                else -> {
-                    startLocalRecognition(isManual)
-                }
+            } else if (!voskRecognitionService.isReady) {
+                binding.speechStatusText.text = "语音识别未准备好"
+                Toast.makeText(context, "语音识别未准备好，请稍后再试", Toast.LENGTH_SHORT).show()
             }
         } catch (e: Exception) {
             Log.e(TAG, "启动语音识别失败: ${e.message}", e)
             binding.speechStatusText.text = "语音识别启动失败"
             Toast.makeText(context, "语音识别启动失败: ${e.message}", Toast.LENGTH_SHORT).show()
+            isListening = false
         }
     }
     
-    // 检查网络连接状态
-    private fun isNetworkAvailable(): Boolean {
-        val connectivityManager = requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val activeNetworkInfo = connectivityManager.activeNetworkInfo
-        return activeNetworkInfo?.isConnectedOrConnecting == true
-    }
-
-    // 检查省电模式
-    @SuppressLint("NewApi")
-    private fun isPowerSaveMode(): Boolean {
-        val powerManager = requireContext().getSystemService(Context.POWER_SERVICE) as PowerManager
-        return powerManager.isPowerSaveMode
-    }
-
-    // 使用Google云识别
-    private fun startGoogleCloudRecognition() {
+    private fun stopListening() {
         try {
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.US)
-                putExtra(RecognizerIntent.EXTRA_PROMPT, "请拼读单词")
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000)
+            if (isListening) {
+                voskRecognitionService.stopListening()
+                isListening = false
+                binding.speechStatusText.text = "识别已停止"
+                
+                // 停止麦克风动画
+                binding.micAnimationIcon.clearAnimation()
             }
-            binding.speechStatusText.text = "请拼读单词"
-            cloudRecognitionLauncher.launch(intent)
-        } catch (e: ActivityNotFoundException) {
-            Log.e(TAG, "找不到语音识别活动: ${e.message}", e)
-            Toast.makeText(context, "您的设备不支持语音识别", Toast.LENGTH_SHORT).show()
-            binding.speechStatusText.text = "设备不支持语音识别"
-            useAlternativeRecognition = true
         } catch (e: Exception) {
-            Log.e(TAG, "启动语音识别失败: ${e.message}", e)
-            Toast.makeText(context, "语音识别启动失败", Toast.LENGTH_SHORT).show()
-            binding.speechStatusText.text = "语音识别启动失败"
-            useAlternativeRecognition = true
-        }
-    }
-    
-    // 使用本地语音识别器
-    private fun startLocalRecognition(isManual: Boolean) {
-        if (!::speechRecognizer.isInitialized) {
-            initSpeechRecognizer()
-            return
-        }
-        
-        try {
-            // 配置超时
-            recognitionTimeout?.cancel()
-            recognitionTimeout = launch {
-                delay(10000) // 10秒超时
-                if (isAdded && _binding != null) {
-                    binding.speechStatusText.text = "识别超时，请重试"
-                    speechRecognizer.cancel()
-                    startListening()
-                }
-            }
-            
-            // 开始识别
-            binding.speechStatusText.text = "请拼读单词"
-            speechRecognizer.startListening(speechRecognizerIntent)
-            isManualRecording = isManual
-        } catch (e: Exception) {
-            Log.e(TAG, "本地语音识别器启动失败: ${e.message}", e)
-            binding.speechStatusText.text = "语音识别启动失败"
-            
-            // 尝试重新初始化
-            try {
-                speechRecognizer.destroy()
-                initSpeechRecognizer()
-            } catch (innerE: Exception) {
-                Log.e(TAG, "重新初始化语音识别器失败: ${innerE.message}", innerE)
-            }
+            Log.e(TAG, "停止语音识别失败: ${e.message}", e)
         }
     }
 
-    // 创建语音识别监听器
-    private fun createRecognitionListener(): AndroidRecognitionListener {
-        return object : AndroidRecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) {
-                if (!isAdded || _binding == null) return
-                Log.d(TAG, "语音识别准备就绪")
-                binding.speechStatusText.text = "请拼读单词"
-                recognitionTimeout?.cancel()
-            }
-            
-            override fun onBeginningOfSpeech() {
-                if (!isAdded || _binding == null) return
-                Log.d(TAG, "开始语音输入")
-                binding.speechStatusText.text = "正在聆听..."
-                recognitionTimeout?.cancel()
-            }
-            
-            override fun onRmsChanged(rmsdB: Float) {}
-            override fun onBufferReceived(buffer: ByteArray?) {}
-            
-            override fun onEndOfSpeech() {
-                if (!isAdded || _binding == null) return
-                Log.d(TAG, "语音输入结束")
-                binding.speechStatusText.text = "识别中..."
-            }
-            
-            override fun onError(error: Int) {
-                if (!isAdded || _binding == null) return
-                
-                val errorMessage = getErrorMessage(error)
-                Log.w(TAG, "语音识别错误: $errorMessage (错误码: $error)")
-                
-                if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
-                    binding.speechStatusText.text = "需要麦克风权限"
-                    Toast.makeText(context, R.string.voice_permission_required, Toast.LENGTH_LONG).show()
-                    showPermissionRationaleDialog()
-                    return
-                }
-                
-                if (error != SpeechRecognizer.ERROR_NO_MATCH && 
-                    error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                    binding.speechStatusText.text = "语音识别错误: $errorMessage"
-                    Toast.makeText(context, "语音识别错误: $errorMessage", Toast.LENGTH_SHORT).show()
-                } else {
-                    binding.speechStatusText.text = "请拼读单词"
-                }
-                
-                launch { 
-                    try {
-                        delay(1000)
-                        if (isAdded) startListening()
-                    } catch (e: Exception) {
-                        Log.e(TAG, "重启语音识别失败: ${e.message}")
-                    }
-                }
-            }
-            
-            override fun onResults(results: Bundle?) {
-                if (!isAdded || _binding == null) return
-                
-                val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                Log.d(TAG, "语音识别结果: $matches")
-                
-                if (!matches.isNullOrEmpty()) {
-                    val spokenText = matches[0].lowercase(Locale.US)
-                    handleRecognitionResult(spokenText)
-                } else {
-                    Log.w(TAG, "未能识别语音内容")
-                    binding.speechStatusText.text = "未能识别，请重试"
-                    startListening()
-                }
-            }
-            
-            override fun onPartialResults(partialResults: Bundle?) {}
-            override fun onEvent(eventType: Int, params: Bundle?) {}
-        }
-    }
-
-    // 获取错误消息
-    private fun getErrorMessage(error: Int): String {
-        return when (error) {
-            SpeechRecognizer.ERROR_AUDIO -> "音频错误"
-            SpeechRecognizer.ERROR_CLIENT -> "客户端错误"
-            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "权限不足"
-            SpeechRecognizer.ERROR_NETWORK -> "网络错误"
-            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "网络超时"
-            SpeechRecognizer.ERROR_NO_MATCH -> "未能匹配语音"
-            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "识别器忙"
-            SpeechRecognizer.ERROR_SERVER -> "服务器错误"
-            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "语音超时"
-            else -> "未知错误"
-        }
-    }
-
-    // 处理识别结果
-    private fun handleRecognitionResult(spokenText: String) {
-        binding.tvSpokenLetter.text = "您说: $spokenText"
-        
-        val currentWord = viewModel.words.value?.getOrNull(viewModel.currentWordIndex.value ?: -1)
-        if (currentWord != null && spokenText == currentWord.word.lowercase(Locale.US)) {
-            Log.d(TAG, "单词拼读正确: $spokenText")
-            binding.speechStatusText.text = "发音正确!"
-            viewModel.markWordAsKnown(currentWord)
-            goToNextWord()
-        } else {
-            Log.d(TAG, "单词拼读不匹配: $spokenText vs ${currentWord?.word}")
-            binding.speechStatusText.text = "发音不匹配，请重试"
-            Toast.makeText(requireContext(), "发音不匹配: $spokenText", Toast.LENGTH_SHORT).show()
-            if (currentWord != null) {
-                speakCurrentLetter(currentWord)
-            }
-            startListening()
-        }
-    }
-
-    private fun speakCurrentLetter(word: Word?) {
+    private fun speakCurrentWord(word: Word?) {
         word?.let { w ->
-            // 组合单词和中文翻译，中间加空格
+            // 确保先停止之前的播放，避免重复
+            ttsHelper.stop()
+            
+            // 更新UI显示中文释义
+            binding.tvCurrentMeaning.text = w.chineseMeaning
+            
+            // 隐藏字母提示，因为现在是整个单词拼写
+            binding.tvCurrentLetter.text = "请拼写与此意思对应的英文单词"
+            
+            // 构建要朗读的文本：英文单词+中文释义
             val textToSpeak = if (w.chineseMeaning.isNullOrEmpty()) {
                 w.word
             } else {
-                "${w.word} ${w.chineseMeaning}"
+                "${w.word}, ${w.chineseMeaning}"
             }
             
-            // 调用TTS发音
+            // 朗读整个单词和中文含义
             ttsHelper.speak(textToSpeak)
         }
     }
 
     override fun onInit(status: Int) {
-        // 已不再需要此方法，但由于实现了接口，保留一个空实现
+        // TextToSpeech初始化回调
+        // 目前使用TTSHelper处理，不需要在这里实现
     }
 
+    override fun onPause() {
+        super.onPause()
+        
+        // 停止当前的语音识别和TTS
+        stopListening()
+        if (::ttsHelper.isInitialized) {
+            try {
+                ttsHelper.stop()
+            } catch (e: Exception) {
+                Log.e(TAG, "停止TTS失败: ${e.message}", e)
+            }
+        }
+        
+        // 更新学习时间
+        try {
+            viewModel.updateStudyTime()
+        } catch (e: Exception) {
+            Log.e(TAG, "更新学习时间失败: ${e.message}", e)
+        }
+    }
+    
+    override fun onStop() {
+        super.onStop()
+        
+        // 停止当前的语音识别和TTS
+        stopListening()
+        if (::ttsHelper.isInitialized) {
+            try {
+                ttsHelper.stop()
+            } catch (e: Exception) {
+                Log.e(TAG, "停止TTS失败: ${e.message}", e)
+            }
+        }
+    }
+    
     override fun onDestroyView() {
         super.onDestroyView()
         
@@ -784,127 +605,56 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
         try {
             binding.micAnimationIcon.clearAnimation()
         } catch (e: Exception) {
-            Log.e("WordStudyFragment", "停止动画失败", e)
+            Log.e(TAG, "停止动画失败", e)
         }
         
         if (::ttsHelper.isInitialized) {
             try {
+                // 首先停止TTS，然后关闭资源
+                ttsHelper.stop()
                 ttsHelper.shutdown()
             } catch (e: Exception) {
-                Log.e("WordStudyFragment", "释放TTS资源失败", e)
-            }
-        }
-        
-        if (::speechRecognizer.isInitialized) {
-            try {
-                speechRecognizer.destroy()
-            } catch (e: Exception) {
-                Log.e("WordStudyFragment", "销毁语音识别器异常: ${e.message}")
+                Log.e(TAG, "释放TTS资源失败", e)
             }
         }
         
         try {
             viewModel.updateStudyTime()
         } catch (e: Exception) {
-            Log.e("WordStudyFragment", "更新学习时间失败", e)
+            Log.e(TAG, "更新学习时间失败", e)
         }
         
         // 关闭Vosk资源
-        if (useVoskRecognition) {
-            try {
-                voskRecognitionService.stopListening()
-            } catch (e: Exception) {
-                Log.e(TAG, "停止Vosk识别失败: ${e.message}", e)
-            }
+        try {
+            voskRecognitionService.stopListening()
+        } catch (e: Exception) {
+            Log.e(TAG, "停止Vosk识别失败: ${e.message}", e)
         }
         
         _binding = null
     }
 
-    // 设置语音识别方法切换按钮
-    private fun setupRecognitionMethodSwitch() {
-        binding.btnSwitchRecognition.setOnClickListener {
-            when {
-                !useAlternativeRecognition && !useGoogleCloudRecognition -> {
-                    // 根据Google Play服务可用性决定切换到哪种模式
-                    if (isGooglePlayServicesAvailable) {
-                        // 从默认方式切换到Google云语音识别
-                        useGoogleCloudRecognition = true
-                        useAlternativeRecognition = false
-                        Toast.makeText(context, "已切换至Google云语音识别", Toast.LENGTH_SHORT).show()
-                        binding.btnSwitchRecognition.text = "切换至离线识别"
-                    } else {
-                        // 直接切换到离线识别
-                        useGoogleCloudRecognition = false
-                        useAlternativeRecognition = true
-                        Toast.makeText(context, "已切换至离线识别", Toast.LENGTH_SHORT).show()
-                        binding.btnSwitchRecognition.text = "切换至默认识别"
-                    }
-                }
-                useGoogleCloudRecognition -> {
-                    // 从Google云语音识别切换到离线识别
-                    useGoogleCloudRecognition = false
-                    useAlternativeRecognition = true
-                    Toast.makeText(context, "已切换至离线识别", Toast.LENGTH_SHORT).show()
-                    binding.btnSwitchRecognition.text = "切换至默认识别"
-                }
-                else -> {
-                    // 从离线识别切换回默认方式
-                    useGoogleCloudRecognition = false
-                    useAlternativeRecognition = false
-                    Toast.makeText(context, "已切换至默认识别", Toast.LENGTH_SHORT).show()
-                    binding.btnSwitchRecognition.text = "切换识别方式"
-                    // 重新初始化默认识别
-                    try {
-                        setupSpeechRecognition()
-                    } catch (e: Exception) {
-                        Log.e("WordStudyFragment", "重新设置默认语音识别失败: ${e.message}", e)
-                    }
-                }
-            }
-            // 立即使用新的识别方式
-            startListening()
-        }
-    }
-
-    /**
-     * 检查Google Play服务可用性
-     */
-    private fun checkGooglePlayServicesAvailability() {
-        try {
-            val googleApiAvailability = GoogleApiAvailability.getInstance()
-            val resultCode = googleApiAvailability.isGooglePlayServicesAvailable(requireContext())
-            isGooglePlayServicesAvailable = (resultCode == com.google.android.gms.common.ConnectionResult.SUCCESS)
-            
-            Log.d("WordStudyFragment", "Google Play服务可用性: $isGooglePlayServicesAvailable")
-        } catch (e: Exception) {
-            Log.e("WordStudyFragment", "检查Google Play服务可用性失败: ${e.message}", e)
-            isGooglePlayServicesAvailable = false
-        }
-    }
-    
     /**
      * 设置录音按钮的触摸事件
      */
     private fun setupRecordButton() {
-        binding.btnRecord.setOnTouchListener { _, event ->
+        binding.btnRecord.setOnTouchListener { v, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
+                    // 按下时提供触觉反馈
+                    v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                     // 按下按钮时开始录音
-                    isManualRecording = true
-                    binding.speechStatusText.text = "请说出单词..."
-                    startListening(true)
+                    startListening()
+                    // 视觉反馈 - 改变按钮状态
+                    v.isPressed = true
+                    v.animate().scaleX(0.9f).scaleY(0.9f).setDuration(100).start()
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     // 松开按钮时停止录音
-                    isManualRecording = false
-                    if (::speechRecognizer.isInitialized) {
-                        try {
-                            speechRecognizer.stopListening()
-                        } catch (e: Exception) {
-                            Log.e("WordStudyFragment", "停止语音识别失败: ${e.message}", e)
-                        }
-                    }
+                    stopListening()
+                    // 视觉反馈 - 恢复按钮状态
+                    v.isPressed = false
+                    v.animate().scaleX(1f).scaleY(1f).setDuration(100).start()
                 }
             }
             true
@@ -912,19 +662,34 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
     }
 
     private fun setupNavigationButtons() {
-        // 上一个按钮点击事件
-        binding.btnPrevious.setOnClickListener {
-            val currentPosition = binding.viewpagerWordCards.currentItem
-            if (currentPosition > 0) {
-                binding.viewpagerWordCards.currentItem = currentPosition - 1
-            } else {
-                Toast.makeText(requireContext(), "已经是第一个单词", Toast.LENGTH_SHORT).show()
-            }
+        binding.btnPrevious.setOnClickListener { v ->
+            // 触觉反馈
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            
+            // 视觉反馈
+            v.animate().scaleX(0.9f).scaleY(0.9f).setDuration(50).withEndAction {
+                v.animate().scaleX(1f).scaleY(1f).setDuration(50).start()
+            }.start()
+            
+            goToPreviousWord()
+            
+            // 重置键盘输入框
+            binding.etLetterInput.setText("")
         }
         
-        // 下一个按钮点击事件
-        binding.btnNext.setOnClickListener {
+        binding.btnNext.setOnClickListener { v ->
+            // 触觉反馈
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            
+            // 视觉反馈
+            v.animate().scaleX(0.9f).scaleY(0.9f).setDuration(50).withEndAction {
+                v.animate().scaleX(1f).scaleY(1f).setDuration(50).start()
+            }.start()
+            
             goToNextWord()
+            
+            // 重置键盘输入框
+            binding.etLetterInput.setText("")
         }
     }
 
@@ -933,28 +698,139 @@ class WordStudyFragment : Fragment(), TextToSpeech.OnInitListener, CoroutineScop
         lifecycleScope.launch {
             try {
                 val success = voskRecognitionService.initializeRecognizer()
-                useVoskRecognition = success
                 
                 if (success) {
                     Log.d(TAG, "Vosk初始化成功")
                     
-                    // 观察单词列表以配置Vosk词汇表
-                    viewModel.words.observe(viewLifecycleOwner) { words ->
-                        if (words.isNotEmpty()) {
-                            val wordTexts = words.map { it.word.lowercase().trim() }
-                            voskRecognitionService.configureVocabulary(wordTexts)
-                            Log.d(TAG, "为Vosk配置了${wordTexts.size}个单词")
-                        }
+                    // 配置Vosk为单词识别模式
+                    configureVoskForWords(viewModel.words.value ?: emptyList())
+                    
+                    // 初始化成功后，设置当前单词和字母
+                    val currentWord = viewModel.getCurrentWord()
+                    if (currentWord != null) {
+                        speakCurrentWord(currentWord)
                     }
                 } else {
-                    Log.w(TAG, "Vosk初始化失败，将使用备选方法")
-                    useAlternativeRecognition = true
+                    Log.w(TAG, "Vosk初始化失败，请检查设备配置")
+                    binding.speechStatusText.text = "语音识别不可用"
+                    Toast.makeText(context, "语音识别初始化失败，请检查设备配置", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Vosk初始化异常: ${e.message}", e)
-                useVoskRecognition = false
-                useAlternativeRecognition = true
+                binding.speechStatusText.text = "语音识别初始化异常"
+                Toast.makeText(context, "语音识别初始化异常: ${e.message}", Toast.LENGTH_LONG).show()
             }
+        }
+    }
+
+    // 配置Vosk为单词识别模式
+    private fun configureVoskForWords(words: List<Word>) {
+        // 提取所有单词作为识别词汇
+        val vocabulary = words.map { it.word.lowercase(Locale.US) }
+        voskRecognitionService.configureVocabulary(vocabulary)
+    }
+
+    private fun setupClickListeners() {
+        // 发音按钮
+        binding.btnPronounce.setOnClickListener { v ->
+            // 触觉反馈
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            
+            // 视觉反馈
+            v.animate().scaleX(0.9f).scaleY(0.9f).setDuration(50).withEndAction {
+                v.animate().scaleX(1f).scaleY(1f).setDuration(50).start()
+            }.start()
+            
+            // 获取当前选中的单词并朗读
+            val currentWord = viewModel.getCurrentWord()
+            if (currentWord != null) {
+                // 停止之前的TTS播放，避免重复
+                ttsHelper.stop()
+                speakCurrentWord(currentWord)
+            } else {
+                Toast.makeText(context, "当前没有单词可朗读", Toast.LENGTH_SHORT).show()
+            }
+        }
+        
+        // 设置录音按钮的触摸事件
+        setupRecordButton()
+        
+        // 设置字母输入按钮
+        binding.btnSubmitLetter.setOnClickListener { v ->
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            
+            // 获取用户输入的单词
+            val inputWord = binding.etLetterInput.text.toString().trim()
+            
+            if (inputWord.isNotEmpty()) {
+                processKeyboardInput(inputWord)
+                // 清空输入框
+                binding.etLetterInput.setText("")
+            } else {
+                Toast.makeText(context, "请输入单词", Toast.LENGTH_SHORT).show()
+            }
+        }
+        
+        // 设置模式切换按钮
+        binding.btnToggleMode.setOnClickListener { v ->
+            // 触觉反馈
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            
+            // 切换学习模式
+            viewModel.toggleStudyMode()
+        }
+        
+        // 设置上一个和下一个按钮的点击事件
+        setupNavigationButtons()
+    }
+
+    /**
+     * 处理键盘输入的字母
+     */
+    private fun processKeyboardInput(inputWord: String) {
+        try {
+            // 显示用户输入的单词
+            binding.tvSpokenLetter.text = "您输入: $inputWord"
+            
+            // 获取当前单词
+            val currentWord = viewModel.getCurrentWord()
+            
+            if (currentWord != null) {
+                // 判断用户是否正确拼写了当前单词
+                if (viewModel.checkWholeWord(inputWord)) {
+                    // 单词拼写正确
+                    binding.speechStatusText.text = "拼写正确!"
+                    Toast.makeText(requireContext(), "单词 ${currentWord.word} 拼写正确!", Toast.LENGTH_SHORT).show()
+                    
+                    // 延迟后切换到下一个单词
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        goToNextWord()
+                    }, 1500)
+                } else {
+                    // 单词拼写错误
+                    binding.speechStatusText.text = "拼写错误! 请再试一次"
+                    
+                    // 获取错误次数
+                    val errorCount = viewModel.currentWordErrorCount.value ?: 0
+                    
+                    // 如果错误次数达到3次，显示正确的拼写
+                    if (errorCount >= 3) {
+                        val correctSpelling = viewModel.getCorrectSpelling()
+                        if (correctSpelling != null) {
+                            binding.speechStatusText.text = "正确的拼写是: $correctSpelling"
+                            Toast.makeText(requireContext(), "单词已标记为困难", Toast.LENGTH_SHORT).show()
+                        }
+                        
+                        // 延迟后切换到下一个单词
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            goToNextWord()
+                        }, 3000)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "处理键盘输入失败: ${e.message}", e)
+            binding.speechStatusText.text = "请重新输入单词"
         }
     }
 }

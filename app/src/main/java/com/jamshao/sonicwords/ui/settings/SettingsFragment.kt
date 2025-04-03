@@ -121,9 +121,10 @@ class SettingsFragment : PreferenceFragmentCompat(), SharedPreferences.OnSharedP
         registerFileLaunchers()
     }
     
-    private fun testOnlineTTSVoice(voice: String) {
+    private fun testOnlineTTSVoice(voiceId: String) {
         settingsScope.launch {
             val testText = "这是一个测试，看看这个声音怎么样？"
+            Log.d("SettingsFragment", "测试在线TTS声音: $voiceId")
             onlineTTSService.speak(testText)
         }
     }
@@ -197,12 +198,35 @@ class SettingsFragment : PreferenceFragmentCompat(), SharedPreferences.OnSharedP
     override fun onPause() {
         super.onPause()
         sharedPreferences.unregisterOnSharedPreferenceChangeListener(this)
-        onlineTTSService.stop()
+        
+        // 停止在线TTS服务
+        try {
+            onlineTTSService.stop()
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "停止在线TTS服务失败", e)
+        }
+    }
+    
+    override fun onStop() {
+        super.onStop()
+        
+        // 确保TTS服务已停止
+        try {
+            onlineTTSService.stop()
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "停止在线TTS服务失败", e)
+        }
     }
     
     override fun onDestroy() {
         super.onDestroy()
-        onlineTTSService.stop()
+        
+        // 确保已停止并释放所有资源
+        try {
+            onlineTTSService.stop()
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "销毁时停止在线TTS服务失败", e)
+        }
     }
     
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences, key: String?) {

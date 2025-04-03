@@ -9,10 +9,13 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -30,6 +33,7 @@ import com.jamshao.sonicwords.databinding.FragmentWordInputBinding
 import com.jamshao.sonicwords.data.entity.WordWithTranslation
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.*
+import android.view.HapticFeedbackConstants
 
 @AndroidEntryPoint
 class WordInputFragment : Fragment() {
@@ -48,12 +52,16 @@ class WordInputFragment : Fragment() {
     private var speechRecognizer: SpeechRecognizer? = null
     private var isListening = false
     
+    // 添加语音状态文本视图
+    private var _speechStatusText: TextView? = null
+    private val speechStatusText get() = _speechStatusText
+    
     // 麦克风权限请求
     private val microphonePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            startSpeechRecognitionInternal()
+            initSpeechRecognizer()
         } else {
             Snackbar.make(binding.root, R.string.voice_permission_required, Snackbar.LENGTH_LONG).show()
         }
@@ -112,7 +120,7 @@ class WordInputFragment : Fragment() {
         setupObservers()
         setupClickListeners()
         // 初始化SpeechRecognizer
-        initSpeechRecognizer()
+        checkMicrophonePermission()
     }
     
     private fun initSpeechRecognizer() {
@@ -123,8 +131,8 @@ class WordInputFragment : Fragment() {
                 override fun onReadyForSpeech(params: Bundle?) {
                     Log.d(TAG, "onReadyForSpeech")
                     isListening = true
-                    binding.voiceButton.isEnabled = false
-                    Snackbar.make(binding.root, "请开始说话...", Snackbar.LENGTH_SHORT).show()
+                    _speechStatusText?.visibility = View.VISIBLE
+                    _speechStatusText?.text = "请开始说话..."
                 }
 
                 override fun onBeginningOfSpeech() {
@@ -142,13 +150,13 @@ class WordInputFragment : Fragment() {
                 override fun onEndOfSpeech() {
                     Log.d(TAG, "onEndOfSpeech")
                     isListening = false
-                    binding.voiceButton.isEnabled = true
+                    _speechStatusText?.visibility = View.GONE
                 }
 
                 override fun onError(error: Int) {
                     Log.e(TAG, "onError: $error")
                     isListening = false
-                    binding.voiceButton.isEnabled = true
+                    _speechStatusText?.visibility = View.GONE
                     
                     val errorMessage = when (error) {
                         SpeechRecognizer.ERROR_AUDIO -> "音频录制错误"
@@ -164,17 +172,12 @@ class WordInputFragment : Fragment() {
                     }
                     
                     Snackbar.make(binding.root, "语音识别错误: $errorMessage", Snackbar.LENGTH_LONG).show()
-                    
-                    // 尝试使用系统语音识别作为备选
-                    if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                        startSystemSpeechRecognition()
-                    }
                 }
 
                 override fun onResults(results: Bundle?) {
                     Log.d(TAG, "onResults")
                     isListening = false
-                    binding.voiceButton.isEnabled = true
+                    _speechStatusText?.visibility = View.GONE
                     
                     val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     if (!matches.isNullOrEmpty()) {
@@ -187,6 +190,11 @@ class WordInputFragment : Fragment() {
                 override fun onPartialResults(partialResults: Bundle?) {
                     Log.d(TAG, "onPartialResults")
                     // 可以显示部分识别结果
+                    val partialMatches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    if (!partialMatches.isNullOrEmpty()) {
+                        val partialText = partialMatches[0]
+                        _speechStatusText?.text = "正在识别: $partialText"
+                    }
                 }
 
                 override fun onEvent(eventType: Int, params: Bundle?) {
@@ -195,12 +203,13 @@ class WordInputFragment : Fragment() {
             })
             Log.d(TAG, "SpeechRecognizer初始化成功")
         } else {
-            Log.w(TAG, "设备不支持SpeechRecognizer，将使用系统语音识别活动")
+            Log.w(TAG, "设备不支持SpeechRecognizer")
+            Snackbar.make(binding.root, "设备不支持语音识别功能", Snackbar.LENGTH_LONG).show()
         }
     }
     
     // 使用SpeechRecognizer开始语音识别
-    private fun startDirectSpeechRecognition() {
+    private fun startSpeechRecognition() {
         if (speechRecognizer != null && !isListening) {
             try {
                 val recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -212,56 +221,26 @@ class WordInputFragment : Fragment() {
                 
                 speechRecognizer?.startListening(recognizerIntent)
                 isListening = true
-                Log.d(TAG, "开始直接语音识别")
+                Log.d(TAG, "开始语音识别")
             } catch (e: Exception) {
-                Log.e(TAG, "启动直接语音识别失败: ${e.message}", e)
+                Log.e(TAG, "启动语音识别失败: ${e.message}", e)
                 isListening = false
-                
-                // 如果直接使用SpeechRecognizer失败，尝试系统语音识别
-                startSystemSpeechRecognition()
+                Snackbar.make(binding.root, "启动语音识别失败: ${e.message}", Snackbar.LENGTH_LONG).show()
             }
         } else {
-            // 如果SpeechRecognizer不可用，使用系统语音识别
-            startSystemSpeechRecognition()
+            Snackbar.make(binding.root, "语音识别不可用", Snackbar.LENGTH_LONG).show()
         }
     }
     
-    // 使用系统语音识别活动
-    private fun startSystemSpeechRecognition() {
-        try {
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US") // 设置为英语识别
-                putExtra(RecognizerIntent.EXTRA_PROMPT, getString(R.string.voice_prompt))
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-            }
-            
+    private fun stopSpeechRecognition() {
+        if (speechRecognizer != null && isListening) {
             try {
-                speechRecognizerLauncher.launch(intent)
-                Log.d(TAG, "系统语音识别活动已启动")
+                speechRecognizer?.stopListening()
+                isListening = false
+                Log.d(TAG, "停止语音识别")
             } catch (e: Exception) {
-                Log.e(TAG, "启动系统语音识别失败: ${e.message}", e)
-                
-                // 尝试直接启动系统语音识别活动作为最后备选方案
-                try {
-                    startActivity(intent)
-                    Log.d(TAG, "已尝试使用系统默认语音识别")
-                } catch (e2: Exception) {
-                    Snackbar.make(
-                        binding.root,
-                        "无法启动语音识别，请检查您的设备设置或权限",
-                        Snackbar.LENGTH_LONG
-                    ).show()
-                    Log.e(TAG, "所有语音识别方法均失败", e2)
-                }
+                Log.e(TAG, "停止语音识别失败: ${e.message}", e)
             }
-        } catch (e: Exception) {
-            Snackbar.make(
-                binding.root,
-                "语音识别初始化失败: ${e.message ?: "未知错误"}",
-                Snackbar.LENGTH_LONG
-            ).show()
-            Log.e(TAG, "语音识别初始化失败", e)
         }
     }
     
@@ -313,7 +292,7 @@ class WordInputFragment : Fragment() {
     
     private fun setupClickListeners() {
         // 输入文本变化监听
-        binding.wordsInputEditText.setOnEditorActionListener { v, actionId, event ->
+        binding.wordsInputEditText.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
                 val text = binding.wordsInputEditText.text.toString()
                 if (text.isNotBlank()) {
@@ -326,12 +305,19 @@ class WordInputFragment : Fragment() {
         }
         
         // 保存按钮
-        binding.saveButton.setOnClickListener {
-            // 获取当前输入框中的文本
-            val currentText = binding.wordsInputEditText.text.toString().trim()
-            if (currentText.isNotBlank()) {
+        binding.saveButton.setOnClickListener { v ->
+            // 触觉反馈
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            
+            // 视觉反馈
+            v.animate().scaleX(0.95f).scaleY(0.95f).setDuration(50).withEndAction {
+                v.animate().scaleX(1f).scaleY(1f).setDuration(50).start()
+            }.start()
+            
+            val wordsText = binding.wordsInputEditText.text.toString().trim()
+            if (wordsText.isNotEmpty()) {
                 // 解析输入的文本，显示单词选择对话框
-                val words = viewModel.parseInputTextToWords(currentText)
+                val words = viewModel.parseInputTextToWords(wordsText)
                 if (words.isNotEmpty()) {
                     showWordSelectionDialog(words)
                 } else {
@@ -344,13 +330,67 @@ class WordInputFragment : Fragment() {
         }
         
         // 相机按钮
-        binding.cameraButton.setOnClickListener {
+        binding.cameraButton.setOnClickListener { v ->
+            // 触觉反馈
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            
+            // 视觉反馈
+            v.animate().scaleX(0.9f).scaleY(0.9f).setDuration(50).withEndAction {
+                v.animate().scaleX(1f).scaleY(1f).setDuration(50).start()
+            }.start()
+            
             checkCameraPermission()
         }
         
-        // 语音按钮
-        binding.voiceButton.setOnClickListener {
-            checkMicrophonePermission()
+        // 语音按钮 - 改为触摸监听
+        binding.voiceButton.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    // 触觉反馈
+                    v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    
+                    // 视觉反馈
+                    v.isPressed = true
+                    v.animate().scaleX(0.9f).scaleY(0.9f).setDuration(100).start()
+                    
+                    // 按下按钮时开始录音
+                    if (!isListening) {
+                        // 添加语音状态文本
+                        if (_speechStatusText == null) {
+                            val statusText = TextView(context)
+                            statusText.id = View.generateViewId()
+                            statusText.text = "准备识别..."
+                            statusText.textSize = 14f
+                            
+                            val params = ConstraintLayout.LayoutParams(
+                                ConstraintLayout.LayoutParams.WRAP_CONTENT,
+                                ConstraintLayout.LayoutParams.WRAP_CONTENT
+                            )
+                            params.topToBottom = binding.wordsInputLayout.id
+                            params.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                            params.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            params.topMargin = 16
+                            
+                            statusText.layoutParams = params
+                            binding.root.addView(statusText)
+                            _speechStatusText = statusText
+                        }
+                        
+                        startSpeechRecognition()
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    // 视觉反馈
+                    v.isPressed = false
+                    v.animate().scaleX(1f).scaleY(1f).setDuration(100).start()
+                    
+                    // 松开按钮时停止录音
+                    if (isListening) {
+                        stopSpeechRecognition()
+                    }
+                }
+            }
+            true
         }
     }
     
@@ -429,8 +469,14 @@ class WordInputFragment : Fragment() {
         val selectAllButton = dialogView.findViewById<View>(R.id.btnSelectAll)
         val deselectAllButton = dialogView.findViewById<View>(R.id.btnDeselectAll)
         
-        selectAllButton.setOnClickListener { adapter.selectAll() }
-        deselectAllButton.setOnClickListener { adapter.deselectAll() }
+        selectAllButton.setOnClickListener { v -> 
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            adapter.selectAll() 
+        }
+        deselectAllButton.setOnClickListener { v -> 
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            adapter.deselectAll() 
+        }
         
         // 提交单词列表到适配器
         adapter.submitList(words)
@@ -482,13 +528,31 @@ class WordInputFragment : Fragment() {
             .setNegativeButton("取消", null)
             .create()
         
-        // 在选择数量变化时更新按钮文本
-        adapter.setOnSelectionChangedListener { selectedCount ->
-            alertDialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE)?.text = 
-                "添加选中单词 (${selectedCount})"
+        // 显示对话框
+        alertDialog.show()
+        
+        // 在对话框显示后再更新按钮文本，确保只有一个按钮
+        val positiveButton = alertDialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE)
+        // 初始状态设置按钮可点击性 - 如果没有选择单词则禁用
+        val initialSelectedCount = adapter.getSelectedCount()
+        positiveButton?.isEnabled = initialSelectedCount > 0
+        if (initialSelectedCount > 0) {
+            positiveButton?.text = "添加选中单词 (${initialSelectedCount})"
+        } else {
+            positiveButton?.text = "请选择单词"
         }
         
-        alertDialog.show()
+        // 在选择数量变化时更新按钮文本和状态
+        adapter.setOnSelectionChangedListener { selectedCount ->
+            positiveButton?.isEnabled = selectedCount > 0
+            positiveButton?.text = if (selectedCount > 0) {
+                "添加选中单词 (${selectedCount})"
+            } else {
+                "请选择单词"
+            }
+            // 添加触觉反馈
+            positiveButton?.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        }
     }
     
     private fun checkMicrophonePermission() {
@@ -497,7 +561,7 @@ class WordInputFragment : Fragment() {
                 requireContext(),
                 Manifest.permission.RECORD_AUDIO
             ) == PackageManager.PERMISSION_GRANTED -> {
-                startSpeechRecognitionInternal()
+                initSpeechRecognizer()
             }
             shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) -> {
                 showMicrophonePermissionRationale()
@@ -518,21 +582,7 @@ class WordInputFragment : Fragment() {
             .setNegativeButton("取消", null)
             .show()
     }
-    
-    private fun startSpeechRecognition() {
-        checkMicrophonePermission()
-    }
-    
-    private fun startSpeechRecognitionInternal() {
-        // 首先尝试使用SpeechRecognizer
-        if (SpeechRecognizer.isRecognitionAvailable(requireContext()) && speechRecognizer != null) {
-            startDirectSpeechRecognition()
-        } else {
-            // 如果不支持SpeechRecognizer，则使用系统语音识别活动
-            startSystemSpeechRecognition()
-        }
-    }
-    
+
     private fun showEditTranslationDialog(wordTranslation: WordWithTranslation) {
         val editTextView = LayoutInflater.from(requireContext())
             .inflate(R.layout.dialog_edit_translation, null) as ViewGroup

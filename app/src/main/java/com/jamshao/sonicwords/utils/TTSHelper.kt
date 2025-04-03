@@ -161,17 +161,38 @@ class TTSHelper(private val context: Context) {
      * 停止播放
      */
     fun stop() {
-        textToSpeech?.stop()
-        onlineTTSService?.stop()
+        try {
+            textToSpeech?.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "停止本地TTS失败", e)
+        }
+        
+        try {
+            onlineTTSService?.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "停止在线TTS失败", e)
+        }
     }
     
     /**
      * 释放资源
      */
     fun shutdown() {
-        stop()
-        textToSpeech?.shutdown()
-        textToSpeech = null
-        isTTSInitialized = false
+        try {
+            stop()
+            
+            try {
+                textToSpeech?.shutdown()
+            } catch (e: Exception) {
+                Log.e(TAG, "关闭本地TTS失败", e)
+            } finally {
+                textToSpeech = null
+                isTTSInitialized = false
+            }
+            
+            onlineTTSService = null
+        } catch (e: Exception) {
+            Log.e(TAG, "关闭TTS资源失败", e)
+        }
     }
 } 

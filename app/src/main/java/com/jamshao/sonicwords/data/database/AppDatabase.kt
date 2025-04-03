@@ -24,15 +24,15 @@ abstract class AppDatabase : RoomDatabase() {
         
         // 数据库迁移：从版本1到版本2
         private val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 // 1. 添加 Word 表中缺少的字段
-                database.execSQL("ALTER TABLE words ADD COLUMN correctCount INTEGER NOT NULL DEFAULT 0")
-                database.execSQL("ALTER TABLE words ADD COLUMN familiarity INTEGER NOT NULL DEFAULT 0")
-                database.execSQL("ALTER TABLE words ADD COLUMN nextReviewTime INTEGER NOT NULL DEFAULT 0")
-                database.execSQL("ALTER TABLE words ADD COLUMN reviewCount INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE words ADD COLUMN correctCount INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE words ADD COLUMN familiarity INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE words ADD COLUMN nextReviewTime INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE words ADD COLUMN reviewCount INTEGER NOT NULL DEFAULT 0")
                 
                 // 2. 创建学习统计表
-                database.execSQL(
+                db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `learning_statistics` " +
                     "(`date` TEXT NOT NULL, " +
                     "`learnedCount` INTEGER NOT NULL DEFAULT 0, " +
@@ -48,17 +48,17 @@ abstract class AppDatabase : RoomDatabase() {
 
         // 数据库迁移：从版本2到版本3
         private val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 // 添加 group 字段
-                database.execSQL("ALTER TABLE words ADD COLUMN `group` TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE words ADD COLUMN `group` TEXT DEFAULT NULL")
             }
         }
         
         // 数据库迁移：从版本3到版本4
         private val MIGRATION_3_4 = object : Migration(3, 4) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 // 1. 创建临时表，包含所有需要的字段，使用正确的数据类型
-                database.execSQL(
+                db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `words_temp` (" +
                     "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
                     "`word` TEXT NOT NULL, " +
@@ -73,24 +73,24 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 
                 // 2. 从旧表复制数据到临时表，将 familiarity 从 INTEGER 转换为 REAL
-                database.execSQL(
+                db.execSQL(
                     "INSERT INTO words_temp (id, word, meaning, errorCount, isLearned, lastReviewTime, familiarity, `group`) " +
                     "SELECT id, word, meaning, errorCount, isLearned, lastReviewTime, CAST(familiarity AS REAL), `group` FROM words"
                 )
                 
                 // 3. 删除旧表
-                database.execSQL("DROP TABLE words")
+                db.execSQL("DROP TABLE words")
                 
                 // 4. 将临时表重命名为正式表
-                database.execSQL("ALTER TABLE words_temp RENAME TO words")
+                db.execSQL("ALTER TABLE words_temp RENAME TO words")
             }
         }
 
         // 数据库迁移：从版本4到版本5
         private val MIGRATION_4_5 = object : Migration(4, 5) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 // 创建一个完全符合当前实体定义的新表
-                database.execSQL(
+                db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `words_new` (" +
                     "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
                     "`word` TEXT NOT NULL, " +
@@ -107,7 +107,7 @@ abstract class AppDatabase : RoomDatabase() {
                 // 尝试从现有表复制所有可能的数据
                 try {
                     // 获取现有表的列信息
-                    val cursor = database.query("PRAGMA table_info(words)")
+                    val cursor = db.query("PRAGMA table_info(words)")
                     val columns = mutableListOf<String>()
                     while (cursor.moveToNext()) {
                         columns.add(cursor.getString(cursor.getColumnIndex("name")))
@@ -167,22 +167,22 @@ abstract class AppDatabase : RoomDatabase() {
                     val targetColumnsStr = targetColumns.joinToString(", ")
                     
                     if (sourceColumns.isNotEmpty()) {
-                        database.execSQL(
+                        db.execSQL(
                             "INSERT INTO words_new ($targetColumnsStr) " +
                             "SELECT $sourceColumnsStr FROM words"
                         )
                     }
                 } catch (e: Exception) {
                     // 如果出现异常，尝试基本复制
-                    database.execSQL(
+                    db.execSQL(
                         "INSERT INTO words_new (id, word, meaning) " +
                         "SELECT id, word, meaning FROM words"
                     )
                 }
                 
                 // 删除旧表并重命名新表
-                database.execSQL("DROP TABLE words")
-                database.execSQL("ALTER TABLE words_new RENAME TO words")
+                db.execSQL("DROP TABLE words")
+                db.execSQL("ALTER TABLE words_new RENAME TO words")
             }
         }
         

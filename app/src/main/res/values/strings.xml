@@ -73,7 +73,7 @@
     <string name="dialog_save">保存</string>
     <string name="dialog_close">关闭</string>
 
-    <string name="please_spell_word">请拼读单词</string>
+    <string name="please_spell_word">请拼写单词</string>
     <string name="please_say">请说</string>
     <string name="microphone_image">语音识别麦克风</string>
     <string name="switch_recognition_mode">切换识别方式</string>
@@ -110,4 +110,6 @@
     <string name="settings_theme_mode_light">浅色主题</string>
     <string name="settings_theme_mode_dark">深色主题</string>
     <string name="settings_theme_mode_system">跟随系统</string>
+
+    <string name="no_words_found">没有单词</string>
 </resources>
